@@ -1,0 +1,32 @@
+{
+  "version": "0.1.0",
+  "name": "pump_fun",
+  "instructions": [
+    {
+      "name": "buy",
+      "accounts": [
+        {"name": "user", "isMut": true, "isSigner": true},
+        {"name": "mint", "isMut": false, "isSigner": false}
+      ],
+      "args": [
+        {"name": "amount", "type": "u64"},
+        {"name": "maxSolCost", "type": "u64"}
+      ]
+    },
+    {
+      "name": "sell",
+      "accounts": [
+        {"name": "user", "isMut": true, "isSigner": true},
+        {"name": "mint", "isMut": false, "isSigner": false}
+      ],
+      "args": [
+        {"name": "amount", "type": "u64"},
+        {"name": "minSolOutput", "type": "u64"}
+      ]
+    }
+  ],
+  "accounts": [],
+  "types": [],
+  "events": [],
+  "errors": []
+}

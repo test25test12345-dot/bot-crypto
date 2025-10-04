@@ -30,21 +30,6 @@ import { Token } from "graphql";
 import { tokenToString } from "typescript";
 import path from 'path';
 import fs from 'fs';
-import TelegramBot from 'node-telegram-bot-api'
-
-const alertBot = new TelegramBot(process.env.ALERTS_BOT_TOKEN || process.env.BOT_TOKEN || '', {polling: false});
-
-const sendAlert = async (chatId: string, message: string) => {
-  try {
-    await alertBot.sendMessage(chatId, message, { 
-      parse_mode: 'HTML', 
-      disable_web_page_preview: true 
-    });
-    console.log('Alert sent to:', chatId);
-  } catch (error: any) {
-    console.error('Failed to send to:', chatId, error.message);
-  }
-};
 
 const birdeyeApi: any = require("api")("@birdeyedotso/v1.0#crnv83jlti6buqu");
 birdeyeApi.auth(process.env.BIRDEYE_API_KEY);
@@ -52,6 +37,11 @@ birdeyeApi.auth(process.env.BIRDEYE_API_KEY);
 const logToFile = (message: string) => {
     const logFilePath = path.join(__dirname, 'logs', 'track.log');
     const logMessage = `${message}\n`;
+    // Create logs directory if it doesn't exist
+    const logsDir = path.join(__dirname, 'logs');
+    if (!fs.existsSync(logsDir)) {
+        fs.mkdirSync(logsDir, { recursive: true });
+    }
     fs.appendFileSync(logFilePath, logMessage, 'utf8');
 };
 
@@ -76,68 +66,96 @@ const checkDB_Alert = async (buyWallets: any, old: any, swapData: any) => {
     const tokenInfo: any = await getTokenInfo(swapData)
     const solPrice: any = await getTokenPrice_(swapData.inMint)
     console.log("solprice=====", solPrice)
+    // const extensions: any = tokenInfo.data.extensions
     const extensions: any = tokenInfo.data?.extensions ?? null
     const positionTradeScore = await getTokenScore(buyWallets, swapData)
     console.log("buyWallets=====", buyWallets)
 
+    // buyWallets.sort((a: any, b: any) => Date.parse(b.txTime) - Date.parse(a.txTime));
     buyWallets.sort((a: any, b: any) => {
         if (a > b) {
-            return -1;
+            return -1; // a should come before b
         } else if (a < b) {
-            return 1;
+            return 1; // b should come before a
         }
-        return 0;
+        return 0; // a and b are equal
     });
 
     logToFile(`parsedTxn================== ${JSON.stringify(swapData.outMint)}, ${JSON.stringify(tokenInfo.data?.name)}`);
 
-    let message = '';
-    
-    message = message + '\n💸 <b>New smart holder entry</b>\n';
-    message = message + '\n🔎 <b>Address</b>: <code>' + swapData.outMint + '</code>';
-    message = message + '\n💰 <b>Name</b>: ' + (tokenInfo.data?.name ?? " ");
-    message = message + '\n📈 <b>MCap</b>: ' + tokenMCap;
+    let message = ``
+    // 💰📈🍏🍏🟢🔴🔗🐸🚀🚀🐂��💸🛰💊🦚💸
+    // 💸 <b>New smart holder entry ${old === false ? "- New Token Detected" : ""}</b>
+
+    message = `
+    ${message} 
+💸 <b>New smart holder entry</b>
+
+🔎 <b>Address</b>: <code>${swapData.outMint}</code>
+💰 <b>Name</b>: ${tokenInfo.data?.name ?? " "}
+📈 <b>MCap</b>: ${tokenMCap}`
 
     if (extensions && extensions.website) {
-        message = message + '\n🔗 <a href="' + extensions.website + '">Website</a>';
+        message =
+            `${message}
+🔗 <a href="${extensions.website}">Website</a>`
     }
     if (extensions && extensions.twitter) {
-        message = message + '\n🔗 <a href="' + extensions.twitter + '">Twitter</a>';
+        message =
+            `${message}        
+🔗 <a href="${extensions.twitter}">Twitter</a>`
     }
     if (extensions && extensions.telegram) {
-        message = message + '\n🔗 <a href="' + extensions.telegram + '">Telegram</a>';
+        message =
+            `${message}        
+🔗 <a href="${extensions.telegram}">Telegram</a>`
     }
     if (extensions && extensions.discord) {
-        message = message + '\n🔗 <a href="' + extensions.discord + '">Discord</a>';
+        message =
+            `${message}        
+🔗 <a href="${extensions.discord}">Discord</a>`
     }
 
-    message = message + '\n\n💯 <b>TradeScore</b>: ' + positionTradeScore;
-    message = message + '\n\n🦚 <b>' + (buyWallets.length - sellWallets.length) + ' smart holders</b>';
-    
+    message = `
+    ${message}
+
+💯 <b>TradeScore</b>: ${positionTradeScore}
+`
+    message = `${message}
+🦚 <b>${buyWallets.length - sellWallets.length} smart holders</b> `
     for (let i = 0; i < buyWallets.length; i++) {
         if (buyWallets[i].type === "buy") {
             console.log("buybalance===", buyWallets[i].inAmount, solPrice, buyWallets[i].txTime)
-            const amount = (buyWallets[i].inAmount / Math.pow(10, 9) * solPrice).toFixed(0);
-            message = message + '\n🟢 ' + buyWallets[i].name + '  ($' + amount + ') (' + buyWallets[i].txTime + ')';
+
+            message = `${message}
+🟢 ${buyWallets[i].name}  ($${(buyWallets[i].inAmount / 10 ** 9 * solPrice).toFixed(0)}) (${buyWallets[i].txTime})`
         }
     }
 
-    message = message + '\n\n❗ <b>' + sellWallets.length + ' close</b>';
-    
+    // if (sellWallets.length > 0) {
+    message = `${message}
+
+❗ <b>${sellWallets.length} close</b>`
     for (let i = 0; i < buyWallets.length; i++) {
-        if (buyWallets[i].type === "sell") {
-            message = message + '\n🔴 ' + buyWallets[i].name;
-        }
+        if (buyWallets[i].type === "sell")
+            message = `${message}
+🔴 ${buyWallets[i].name}`
     }
+    // }
 
-    message = message + '\n\n⚡ <a href="https://jup.ag/swap/' + swapData.outMint + '-SOL">Jupiter</a>';
-    message = message + '\n🐸 <a href="https://gmgn.ai/sol/token/' + swapData.outMint + '">Gmgn</a>';
-    message = message + '\n🚀 <a href="https://photon-sol.tinyastro.io/en/lp/' + swapData.outMint + '">Photon</a>';
-    message = message + '\n🐂 <a href="https://neo.bullx.io/terminal?chainId=1399811149&address=' + swapData.outMint + '">Bullx</a>';
+    // QUESTA PARTE DEVE ESSERE DENTRO LA FUNZIONE
+    message =
+        `${message}
 
-    await sendAlert('-1002359004329', message);
-    await sendAlert('-1002444321759', message);
-}
+⚡ <a href="https://jup.ag/swap/${swapData.outMint}-SOL">Jupiter</a>
+🐸 <a href="https://gmgn.ai/sol/token/${swapData.outMint}">Gmgn</a>
+🚀 <a href="https://photon-sol.tinyastro.io/en/lp/${swapData.outMint}">Photon</a>
+🐂 <a href="https://neo.bullx.io/terminal?chainId=1399811149&address=${swapData.outMint}">Bullx</a>`
+
+    instance.sendInfoMessage(process.env.GROUP_CHATID, message)
+    instance.sendInfoMessage(process.env.GROUP_CHATID1, message)
+    instance.sendInfoMessage(process.env.GROUP_CHATID2, message)
+} // PARENTESI GRAFFA DI CHIUSURA DELLA FUNZIONE
 
 const processSwapData = async (swap_data: any) => {
     if (!swap_data) {
@@ -172,7 +190,7 @@ const processSwapData = async (swap_data: any) => {
         else {
             db_wallet.tokens[token_index].type = "buy"
             db_wallet.tokens[token_index].txTime = buytxTime.toLocaleString('en-US', {
-                hour12: false,
+                hour12: false,         // 24-hour format
                 year: 'numeric',
                 month: '2-digit',
                 day: '2-digit',
@@ -191,11 +209,12 @@ const processSwapData = async (swap_data: any) => {
         if (buyPosition && buyPosition.token) {
             openPosition = true
             let wallet_index: any = buyPosition.wallets.findIndex((wallet: any) => wallet.address === swap_data.owner)
-            
+            // let count_flag = false;
             if (wallet_index < 0) {
+                // count_flag = true;
                 buyPosition.wallets.push({
                     address: swap_data.owner, type: "buy", name: db_wallet.name, inAmount: swap_data.inAmount, txTime: buytxTime.toLocaleString('en-US', {
-                        hour12: false,
+                        hour12: false,         // 24-hour format
                         year: 'numeric',
                         month: '2-digit',
                         day: '2-digit',
@@ -209,7 +228,7 @@ const processSwapData = async (swap_data: any) => {
                 buyPosition.wallets[wallet_index].type = "buy"
                 buyPosition.wallets[wallet_index].inAmount = swap_data.inAmount
                 buyPosition.wallets[wallet_index].txTime = buytxTime.toLocaleString('en-US', {
-                    hour12: false,
+                    hour12: false,         // 24-hour format
                     year: 'numeric',
                     month: '2-digit',
                     day: '2-digit',
@@ -219,6 +238,7 @@ const processSwapData = async (swap_data: any) => {
                 })
             }
 
+            // await database.updateTrackPosition({ token: swap_data.outMint, wallets: buyPosition.wallets, old: true, firstTxTime:buyPosition.secondTxTime , secondTxTime:Date.now() })
             const buysInPosition_old: any = buyPosition.wallets.filter((wallet: any) => wallet.type === "buy")
             await database.updateTrackPosition({ token: swap_data.outMint, wallets: buyPosition.wallets, old: true })
             const buysInPosition: any = buyPosition.wallets.filter((wallet: any) => wallet.type === "buy")
@@ -226,7 +246,7 @@ const processSwapData = async (swap_data: any) => {
             if (buysInPosition && buysInPosition.length >= 3 && buysInPosition_old?.length != buysInPosition.length) {
                 await checkDB_Alert(buyPosition.wallets, buyPosition?.old, swap_data)
             }
-            else {
+            else if (buysInPosition.length < 3) {
                 await database.removeTrackPosition({ token: swap_data.outMint })
                 openPosition = false
             }
@@ -244,8 +264,10 @@ const processSwapData = async (swap_data: any) => {
                     }
                 }
 
+                // let duration = buyPosition?(Date.now() - buyPosition.firstTxTime):Date.now()
                 if (buycount >= 3 && buyWallets.length >= 3) {
                     console.log("status 2===== ", buyWallets.length);
+                    // await database.updateTrackPosition({ token: swap_data.outMint, wallets: buyWallets, old: false, firstTxTime:buyPosition.secondTxTime , secondTxTime:Date.now() })
                     await database.updateTrackPosition({ token: swap_data.outMint, wallets: buyWallets, old: false })
                     await checkDB_Alert(buyWallets, buyPosition?.old, swap_data)
                     break
@@ -253,9 +275,13 @@ const processSwapData = async (swap_data: any) => {
             }
         }
     } else {
+        // const tokenInfo = await getMint(afx.web3Conn, new PublicKey(swap_data.inMint))
+        // const prevBalance = await getWalletTokenBalance(swap_data.owner, swap_data.inMint, tokenInfo.decimals)
+        // let sellPercent = Number(swap_data.inAmount) / (10 ** tokenInfo.decimals) / prevBalance * 100
+        // sellPercent = sellPercent > 100 ? 100 : sellPercent
         if (swap_data.inMint === USDC_ADDRESS || swap_data.inMint === USDT_ADDRESS)
             return
-        
+        // let solPrice: any = await getTokenPrice_(swap_data.outMint)
         let solPrice: any = await getTokenPrice_(WSOL_ADDRESS)
 
         let token_index = db_wallet.tokens.findIndex((mint: any) => mint.mint === swap_data.inMint)
@@ -307,10 +333,12 @@ const parseTransfer = async (txn: any) => {
                 message = `${message}
     Amount: ${trasferAmount} SOL`
             }
-            message = `🟢��🟢🟢🟢🟢🟢🟢🟢🟢🟢🟢🟢🟢🟢
+            message = `🟢🟢🟢🟢🟢🟢🟢🟢🟢🟢🟢🟢🟢🟢🟢
             User transfered ${count} times
     ${message}`
             if (count > 0) {
+                // You can uncomment this if you want to log transfers
+                // console.log(message)
             }
         }
     } catch (error) {
@@ -369,6 +397,7 @@ const parseTransaction = async (data: any) => {
                     data.transaction,
                     Date.now()
                 );
+
                 const ret = await decodeRaydiumTxn(txn)
                 processSwapData(ret)
                 return
@@ -390,12 +419,15 @@ const parseTransaction = async (data: any) => {
             const ret = await parseTransfer(data.transaction["transaction"])
         }
     } catch (error) {
+        console.error("Error in parseTransaction:", error)
     }
 }
 
 async function handleStream(client: Client, args: SubscribeRequest) {
+    // Subscribe for events
     const stream = await client.subscribe();
 
+    // Create `error` / `end` handler
     const streamClosed = new Promise<void>((resolve, reject) => {
         stream.on("error", (error) => {
             console.log("ERRRORORROROROR", error);
@@ -410,10 +442,12 @@ async function handleStream(client: Client, args: SubscribeRequest) {
         });
     });
 
+    // Handle updates
     stream.on("data", (data) => {
         parseTransaction(data)
     });
 
+    // Send subscribe request
     await new Promise<void>((resolve, reject) => {
         stream.write(args, (err: any) => {
             if (err === null || err === undefined) {
@@ -454,6 +488,7 @@ export const start = async () => {
                 failed: false,
                 signature: undefined,
                 accountInclude: detection_wallets,
+                // accountInclude: [],
                 accountExclude: [],
                 accountRequired: [],
             },

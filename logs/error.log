@@ -1,0 +1,90 @@
+2025-10-03T19:44:05: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-03T19:51:48: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-03T19:56:22: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-03T20:02:08: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-03T20:06:49: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-03T20:11:33: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-03T20:22:59: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-03T23:24:53: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-03T23:36:18: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-03T23:39:51: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-03T23:39:52: src/detection/track-swap.ts(166,4): error TS1127: Invalid character.
+2025-10-03T23:39:52: src/detection/track-swap.ts(166,6): error TS1005: ';' expected.
+2025-10-03T23:39:52: 
+2025-10-03T23:40:52: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-04T10:21:53: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-04T10:32:14: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-04T10:43:09: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-04T10:48:30: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-04T10:55:34: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-04T10:58:30: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-04T10:58:32: src/detection/track-swap.ts(155,5): error TS2552: Cannot find name 'message'. Did you mean 'Message'?
+2025-10-04T10:58:32: src/detection/track-swap.ts(156,12): error TS2552: Cannot find name 'message'. Did you mean 'Message'?
+2025-10-04T10:58:32: src/detection/track-swap.ts(158,34): error TS2304: Cannot find name 'swapData'.
+2025-10-04T10:58:32: src/detection/track-swap.ts(159,41): error TS2304: Cannot find name 'swapData'.
+2025-10-04T10:58:32: src/detection/track-swap.ts(160,53): error TS2304: Cannot find name 'swapData'.
+2025-10-04T10:58:32: src/detection/track-swap.ts(161,72): error TS2304: Cannot find name 'swapData'.
+2025-10-04T10:58:32: src/detection/track-swap.ts(163,39): error TS2552: Cannot find name 'message'. Did you mean 'Message'?
+2025-10-04T10:58:32: src/detection/track-swap.ts(164,39): error TS2552: Cannot find name 'message'. Did you mean 'Message'?
+2025-10-04T10:58:32: src/detection/track-swap.ts(166,1): error TS1128: Declaration or statement expected.
+2025-10-04T10:58:32: 
+2025-10-04T11:02:55: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-04T11:06:41: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-04T17:21:13: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-04T17:53:55: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-04T17:58:14: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-04T17:59:19: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-04T18:00:08: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-04T18:02:40: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:02:40: 
+2025-10-04T18:02:44: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:02:44: 
+2025-10-04T18:02:47: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:02:47: 
+2025-10-04T18:02:50: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:02:50: 
+2025-10-04T18:02:53: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:02:53: 
+2025-10-04T18:02:57: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:02:57: 
+2025-10-04T18:03:00: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:03:00: 
+2025-10-04T18:03:03: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:03:03: 
+2025-10-04T18:03:07: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:03:07: 
+2025-10-04T18:03:10: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:03:10: 
+2025-10-04T18:03:13: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:03:13: 
+2025-10-04T18:03:17: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:03:17: 
+2025-10-04T18:03:20: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:03:20: 
+2025-10-04T18:03:23: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:03:23: 
+2025-10-04T18:03:26: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:03:26: 
+2025-10-04T18:03:30: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:03:30: 
+2025-10-04T18:03:33: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:03:33: 
+2025-10-04T18:03:36: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:03:36: 
+2025-10-04T18:03:40: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:03:40: 
+2025-10-04T18:03:43: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:03:43: 
+2025-10-04T18:03:46: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:03:46: 
+2025-10-04T18:03:49: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:03:49: 
+2025-10-04T18:03:53: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:03:53: 
+2025-10-04T18:03:56: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:03:56: 
+2025-10-04T18:03:59: src/index.ts(7,29): error TS6142: Module './detection/track-swap' was resolved to '/home/tuouser/bots/bot-crypto/src/detection/track-swap.tsx', but '--jsx' is not set.
+2025-10-04T18:03:59: 
+2025-10-04T18:04:06: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-04T18:08:21: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-04T18:11:39: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
