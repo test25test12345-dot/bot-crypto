@@ -1,0 +1,10 @@
+export declare const USDC_ADDRESS = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+export declare const SOL_USDC_POOL_ADDRESS = "58oQChx4yWmvKdwLLZzBi4ChoCc2fqCUWBkwMihLYQo2";
+export declare const OPENBOOK_PROGRAM_ADDRESS = "srmqPvymJeFKQ4zGQed1GFppgkRHL9kaELCbyksJtPX";
+export declare const WSOL_ADDRESS = "So11111111111111111111111111111111111111112";
+export declare const WSOL_DECIMALS = 9;
+export declare const WSOL2022_ADDRESS = "9pan9bMn5HatX4EJdBwg9VgCa7Uz5HL8N1m5D3NdXejP";
+export declare const USDT_ADDRESS = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB";
+export declare const MCAP_SCORE = 0.2;
+export declare const VOLUME_SCORE = 0.3;
+export declare const PNL_SCORE = 0.5;

@@ -1,0 +1,66 @@
+import { BN } from "@coral-xyz/anchor";
+import { PublicKey, TransactionConfirmationStatus } from "@solana/web3.js";
+import Decimal from 'decimal.js';
+export declare const isValidAddress: (address: string) => boolean;
+export declare function getBalance(wallet: string): Promise<number>;
+export declare const shortenAddress: (address: string, length?: number) => string;
+export declare const shortenString: (str: string, length?: number) => string;
+export declare const limitString: (str: string, length?: number) => string;
+export declare const getTokenMetadata: (address: string) => Promise<{
+    name: string;
+    symbol: string;
+    logo: string;
+    decimals: number;
+    address: string;
+    totalSupply: number;
+    description: string;
+    extensions: any;
+    renounced: boolean;
+}>;
+export declare let SOL_PRICE: number;
+export declare let LAST_GET_TIME: number;
+export declare const getSOLPrice: () => Promise<number>;
+export declare const getTokenPrice: (tokenAddress: string) => Promise<any>;
+export declare const getTokenPriceByUSD: (tokenAddress: string) => Promise<Decimal | null>;
+export declare const fetchAPI: (url: string, method: "GET" | "POST", data?: Record<string, any>) => Promise<any | null>;
+export declare const fetchAPIBy: (url: string, method: "GET" | "POST", data?: Record<string, any>) => Promise<any | null>;
+export declare const getShortenedAddress: (address: string) => string;
+export declare const sleep: (ms: number) => Promise<unknown>;
+export declare function objectDeepCopy(obj: any, keysToExclude?: string[]): any;
+export declare const getWalletTokenAccount: (wallet: PublicKey) => Promise<{
+    pubkey: PublicKey;
+    programId: PublicKey;
+    accountInfo: {
+        mint: import("@solana/web3.js").PublicKey;
+        delegate: import("@solana/web3.js").PublicKey;
+        owner: import("@solana/web3.js").PublicKey;
+        state: number;
+        amount: import("bn.js");
+        delegateOption: number;
+        isNativeOption: number;
+        isNative: import("bn.js");
+        delegatedAmount: import("bn.js");
+        closeAuthorityOption: number;
+        closeAuthority: import("@solana/web3.js").PublicKey;
+    };
+}[]>;
+export declare const getWalletTokenBalance: (wallet: PublicKey | string, tokenAddress: string, tokenDecimals?: number) => Promise<number>;
+export declare const getWalletSOLBalance: (wallet: PublicKey | string) => Promise<number | null>;
+export declare const getConfirmation: (trx: string) => Promise<TransactionConfirmationStatus | undefined>;
+export declare const delayForTrxSync: (signature: string) => Promise<void>;
+export declare function getTokenAddressFromTokenAccount(tokenAccountAddress: string): Promise<string>;
+export declare function uint8ArrayToHexString(bytes: Uint8Array): string;
+export declare class DecimalUtil {
+    static fromBigInt(input: BigInt, shift?: number): Decimal;
+    static fromBN(input: BN, shift?: number): Decimal;
+}
+export declare function bnLayoutFormatter(obj: any): void;
+export declare function bytesToInt(bytes: number[]): number;
+export declare function bufferFromUInt64(value: number | string): Buffer<ArrayBuffer>;
+export declare function bytesToUInt64(bytes: any[]): bigint;
+export declare const getTokenPrice_: (addr: string) => Promise<any>;
+export declare const getTokenMcapRaw: (swap_data: any) => Promise<any>;
+export declare const getTokenMcap: (swap_data: any) => Promise<string>;
+export declare const getTokenVolume: (swap_data: any) => Promise<any>;
+export declare const getTokenScore: (buyWallets: any, swap_data: any) => Promise<any>;
+export declare const getTokenInfo: (swap_data: any) => Promise<any>;

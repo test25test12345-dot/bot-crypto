@@ -1,13 +1,23 @@
 module.exports = {
   apps: [{
-    name: 'crypto-bot',
-    script: 'src/index.ts',
-    interpreter: 'node',
-    interpreter_args: '-r ts-node/register',
-    error_file: './logs/error.log',
-    out_file: './logs/output.log',
-    time: true,
+    name: 'crypto-b',
+    script: './dist/index.js',
+    instances: 1,
     autorestart: true,
-    max_memory_restart: '2G'
+    watch: false,
+    max_memory_restart: '500M',
+    min_uptime: '10s',
+    max_restarts: 50,
+    restart_delay: 1000,
+    exp_backoff_restart_delay: 100,
+    env: {
+      NODE_ENV: 'production'
+    },
+    error_file: './logs/err.log',
+    out_file: './logs/out.log',
+    log_file: './logs/combined.log',
+    time: true,
+    merge_logs: true,
+    log_date_format: 'YYYY-MM-DD HH:mm:ss'
   }]
-};
+}

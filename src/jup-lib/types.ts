@@ -1,10 +1,28 @@
-import { IdlEvents, IdlTypes } from "@coral-xyz/anchor";
-import { Jupiter } from "./idl/jupiter";
 import { ParsedInstruction, PublicKey } from "@solana/web3.js";
+import { BN } from "@coral-xyz/anchor";
 
-export type SwapEvent = IdlEvents<Jupiter>["SwapEvent"];
-export type FeeEvent = IdlEvents<Jupiter>["FeeEvent"];
-type RoutePlanStep = IdlTypes<Jupiter>["RoutePlanStep"];
+// Definisci manualmente i tipi basandoti sulla struttura dell'IDL di Jupiter
+export type SwapEvent = {
+  amm: PublicKey;
+  inputMint: PublicKey;
+  inputAmount: BN;
+  outputMint: PublicKey;
+  outputAmount: BN;
+};
+
+export type FeeEvent = {
+  account: PublicKey;
+  mint: PublicKey;
+  amount: BN;
+};
+
+export type RoutePlanStep = {
+  swap: any;
+  percent: number;
+  inputIndex: number;
+  outputIndex: number;
+};
+
 export type RoutePlan = RoutePlanStep[];
 
 export interface PartialInstruction {
