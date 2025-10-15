@@ -50,10 +50,14 @@ const transaction_formatter_1 = require("./transaction-formatter");
 const database = __importStar(require("../db"));
 const utils_1 = require("../utils");
 const pumpfun_detection_1 = require("../pumpfun-lib/pumpfun-detection");
+const config_1 = require("./config");
 const path_1 = __importDefault(require("path"));
 const fs_1 = __importDefault(require("fs"));
 const node_telegram_bot_api_1 = __importDefault(require("node-telegram-bot-api"));
 const alertBot = new node_telegram_bot_api_1.default(process.env.ALERTS_BOT_TOKEN || process.env.BOT_TOKEN || '', { polling: false });
+const BLACKLISTED_WALLETS = [
+    '4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf'
+];
 const sendAlert = async (chatId, message) => {
     try {
         const utf8Message = Buffer.from(message, 'utf8').toString('utf8');
@@ -105,7 +109,7 @@ const checkDB_Alert = async (buyWallets, old, swapData) => {
             }
             return 0;
         });
-        logToFile(`parsedTxn================== ${JSON.stringify(swapData.outMint)}, ${JSON.stringify(tokenInfo.data?.name)}`);
+        logToFile(`Alert triggered for token: ${swapData.outMint}, ${tokenInfo.data?.name}`);
         let message = '';
         message = message + '\n\u{1F4B8} <b>New smart holder entry</b>\n';
         message = message + '\n\u{1F50E} <b>Address</b>: <code>' + swapData.outMint + '</code>';
@@ -155,15 +159,38 @@ const processSwapData = async (swap_data) => {
         if (!swap_data) {
             return;
         }
-        console.log("swap_data=======", swap_data);
+        if (BLACKLISTED_WALLETS.includes(swap_data.owner)) {
+            console.log("❌ BLACKLISTED WALLET - IGNORED:", swap_data.owner);
+            return;
+        }
+        const trackedWallet = config_1.wallets.find(w => w.address === swap_data.owner);
+        if (!trackedWallet) {
+            console.log("❌ NOT IN WHITELIST - IGNORED:", swap_data.owner);
+            return;
+        }
+        console.log("========================================");
+        console.log("✅ PROCESSING VALID SWAP:");
+        console.log("Wallet:", trackedWallet.name);
+        console.log("Address:", swap_data.owner);
+        console.log("Type:", swap_data.type);
+        console.log("inMint:", swap_data.inMint);
+        console.log("outMint:", swap_data.outMint);
+        console.log("Signature:", swap_data.signature);
+        console.log("========================================");
         const db_wallet = await database.selectTrackWallet({ wallet: swap_data.owner });
         if (!db_wallet) {
-            console.log("Doesn't match owner wallet", swap_data.owner, swap_data.signature);
-            return;
+            console.log("Wallet non trovato nel database, creazione in corso...");
+            await database.updateTrackWallet({
+                wallet: swap_data.owner,
+                tokens: [],
+                name: trackedWallet.name
+            });
+            const db_wallet = await database.selectTrackWallet({ wallet: swap_data.owner });
         }
         if (swap_data.inMint === uniconst_1.WSOL_ADDRESS) {
             if (swap_data.outMint === uniconst_1.USDC_ADDRESS || swap_data.outMint === uniconst_1.USDT_ADDRESS)
                 return;
+            console.log(`💚 BUY: ${trackedWallet.name} sta comprando token ${swap_data.outMint.substring(0, 8)}...`);
             const date = new Date();
             const buytxTime = new Date();
             let token_index = db_wallet.tokens.findIndex((mint) => mint.mint === swap_data.outMint);
@@ -228,6 +255,7 @@ const processSwapData = async (swap_data) => {
                 await database.updateTrackPosition({ token: swap_data.outMint, wallets: buyPosition.wallets, old: true });
                 const buysInPosition = buyPosition.wallets.filter((wallet) => wallet.type === "buy");
                 if (buysInPosition && buysInPosition.length >= 3 && buysInPosition_old?.length != buysInPosition.length) {
+                    console.log(`🚨 ALERT TRIGGERED: ${buysInPosition.length} wallet hanno comprato ${swap_data.outMint}`);
                     await checkDB_Alert(buyPosition.wallets, buyPosition?.old, swap_data);
                 }
                 else if (buysInPosition.length < 3) {
@@ -247,7 +275,7 @@ const processSwapData = async (swap_data) => {
                         }
                     }
                     if (buycount >= 3 && buyWallets.length >= 3) {
-                        console.log("status 2===== ", buyWallets.length);
+                        console.log(`🚨 NEW POSITION: ${buyWallets.length} wallet hanno comprato ${swap_data.outMint}`);
                         await database.updateTrackPosition({ token: swap_data.outMint, wallets: buyWallets, old: false });
                         await checkDB_Alert(buyWallets, buyPosition?.old, swap_data);
                         break;
@@ -258,6 +286,7 @@ const processSwapData = async (swap_data) => {
         else {
             if (swap_data.inMint === uniconst_1.USDC_ADDRESS || swap_data.inMint === uniconst_1.USDT_ADDRESS)
                 return;
+            console.log(`🔴 SELL: ${trackedWallet.name} sta vendendo token ${swap_data.inMint.substring(0, 8)}...`);
             let solPrice = await (0, utils_1.getTokenPrice_)(uniconst_1.WSOL_ADDRESS);
             let token_index = db_wallet.tokens.findIndex((mint) => mint.mint === swap_data.inMint);
             let sellAvailable = false;
@@ -313,6 +342,7 @@ const parseTransfer = async (txn) => {
     Amount: ${trasferAmount} SOL`;
             }
             if (count > 0) {
+                console.log(`Transfer detected: ${count} times`);
             }
         }
     }
@@ -325,6 +355,13 @@ const parseTransaction = async (data) => {
         if (data.filters.some((item) => item == 'subscribe_tx') && data.transaction) {
             const txn = TXN_FORMATTER.formTransactionFromJson(data.transaction, Date.now());
             const accountKeys = txn.transaction.message.staticAccountKeys;
+            const signature = txn.transaction.signatures[0];
+            const involvedAccounts = accountKeys.map((key) => key.toBase58());
+            const ourWallets = involvedAccounts.filter((acc) => config_1.wallets.some(w => w.address === acc));
+            if (ourWallets.length > 0) {
+                console.log("✓ TRANSACTION WITH OUR WALLET:", signature);
+                console.log("  Our wallets:", ourWallets);
+            }
             const hasJupiter = accountKeys.find((programId) => {
                 if (programId.equals(constant_1.JUPITER_V6_PROGRAM_ID)) {
                     return true;
@@ -334,6 +371,7 @@ const parseTransaction = async (data) => {
                 }
             });
             if (hasJupiter) {
+                console.log("Jupiter transaction detected");
                 const ret = await (0, jupiter_detection_1.getJupiterSwapInfo)(txn);
                 processSwapData(ret);
                 return;
@@ -347,6 +385,7 @@ const parseTransaction = async (data) => {
                 }
             });
             if (hasCpmm) {
+                console.log("Raydium CPMM transaction detected");
                 const txn = TXN_FORMATTER.formTransactionFromJson(data.transaction, Date.now());
                 const ret = await (0, raydium_cpmm_detection_1.decodeRaydiumCpmmTxn)(txn);
                 processSwapData(ret);
@@ -361,6 +400,7 @@ const parseTransaction = async (data) => {
                 }
             });
             if (hasRaydium) {
+                console.log("Raydium transaction detected");
                 const txn = TXN_FORMATTER.formTransactionFromJson(data.transaction, Date.now());
                 const ret = await (0, raydium_detection_1.decodeRaydiumTxn)(txn);
                 processSwapData(ret);
@@ -375,7 +415,9 @@ const parseTransaction = async (data) => {
                 }
             });
             if (hasPumpFun) {
+                console.log("PumpFun transaction detected");
                 const ret = await (0, pumpfun_detection_1.decodePumpfunTxn)(txn);
+                console.log("PumpFun decode result:", ret ? "Success" : "Failed");
                 processSwapData(ret);
                 return;
             }
@@ -391,8 +433,9 @@ const parseTransaction = async (data) => {
 async function handleStream(client, args) {
     console.log('Stream connecting...');
     const stream = await client.subscribe();
-    console.log('Stream connected');
+    console.log('Stream connected successfully');
     let lastDataTime = Date.now();
+    let transactionCount = 0;
     const heartbeat = setInterval(() => {
         const timeSinceLastData = Date.now() - lastDataTime;
         console.log(`Stream alive - last data: ${Math.floor(timeSinceLastData / 1000)}s ago`);
@@ -422,6 +465,10 @@ async function handleStream(client, args) {
     });
     stream.on("data", (data) => {
         lastDataTime = Date.now();
+        transactionCount++;
+        if (transactionCount % 100 === 0) {
+            console.log(`Processed ${transactionCount} transactions`);
+        }
         parseTransaction(data);
     });
     await new Promise((resolve, reject) => {
@@ -442,7 +489,7 @@ async function handleStream(client, args) {
 async function subscribeCommand(client, args) {
     while (true) {
         try {
-            console.log("Start Substream server");
+            console.log("Starting Substream server...");
             await handleStream(client, args);
         }
         catch (error) {
@@ -453,11 +500,29 @@ async function subscribeCommand(client, args) {
 }
 const client = new yellowstone_grpc_1.default('https://grpc.eu.shyft.to', process.env.GRPC_TOKEN, undefined);
 const start = async () => {
-    console.log('Initializing track-swap...');
-    console.log('Telegram Bot Token:', process.env.ALERTS_BOT_TOKEN || process.env.BOT_TOKEN ? 'OK' : 'MISSING');
-    console.log('GRPC Token:', process.env.GRPC_TOKEN ? 'OK' : 'MISSING');
+    console.log("================================");
+    console.log('TRACK-SWAP INITIALIZATION');
+    console.log("================================");
+    console.log('Telegram Bot Token:', process.env.ALERTS_BOT_TOKEN || process.env.BOT_TOKEN ? '✓' : '✗');
+    console.log('GRPC Token:', process.env.GRPC_TOKEN ? '✓' : '✗');
+    console.log('GRPC Endpoint: https://grpc.eu.shyft.to');
     let detection_wallets = await (0, wallets_1.getWallets)();
-    console.log('Tracking', detection_wallets.length, 'wallets');
+    console.log('Total wallets to track:', detection_wallets.length);
+    const testWallets = [
+        'prED5Hv9jaZmKRw7NcENdUMu6Pw2NWBmN2DSAEbNP7Y',
+        'pp2rgZ8Bshvc1XHCerHJH77fNA7AGQND8D9zfW2AeVb',
+        '4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf'
+    ];
+    for (let wallet of testWallets) {
+        if (detection_wallets.includes(wallet)) {
+            console.log(`✓ ${wallet.substring(0, 8)}... è nella lista di tracking`);
+        }
+        else {
+            console.log(`✗ ${wallet.substring(0, 8)}... NON è nella lista di tracking`);
+        }
+    }
+    console.log("================================");
+    console.log("Starting gRPC stream subscription...");
     const req = {
         accounts: {},
         slots: {},
@@ -479,6 +544,7 @@ const start = async () => {
         ping: undefined,
         commitment: yellowstone_grpc_1.CommitmentLevel.CONFIRMED,
     };
+    console.log("Subscription request created with", detection_wallets.length, "wallets");
     subscribeCommand(client, req);
 };
 exports.start = start;

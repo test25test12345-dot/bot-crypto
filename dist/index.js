@@ -44,8 +44,22 @@ const dotenv_1 = __importDefault(require("dotenv"));
 dotenv_1.default.config();
 const conn = new web3_js_1.Connection(process.env.MAINNET_RPC, 'confirmed');
 afx.setWeb3(conn);
+console.log("================================");
+console.log("BOT STARTING...");
+console.log("RPC:", process.env.MAINNET_RPC);
+console.log("Bot Token:", process.env.BOT_TOKEN ? "✓" : "✗");
+console.log("Alerts Bot Token:", process.env.ALERTS_BOT_TOKEN ? "✓" : "✗");
+console.log("Group Chat IDs:");
+console.log("- GROUP_CHATID:", process.env.GROUP_CHATID);
+console.log("- GROUP_CHATID1:", process.env.GROUP_CHATID1);
+console.log("- GROUP_CHATID2:", process.env.GROUP_CHATID2);
+console.log("Database:", process.env.DB_NAME);
+console.log("================================");
 bot.init(async (session, command, params, messageId) => {
 }, async (option, param) => {
 });
-track_swap.start();
+setTimeout(() => {
+    console.log("Starting swap tracker...");
+    track_swap.start();
+}, 2000);
 //# sourceMappingURL=index.js.map

@@ -27,40 +27,57 @@ PUMP_FUN_EVENT_PARSER.addParserFromIdl(
 );
 
 export async function decodePumpfunTxn(tx: VersionedTransactionResponse) {
-    if (!tx.meta || tx.meta?.err) return;
-    
-    const paredIxs = PUMP_FUN_IX_PARSER.parseTransactionWithInnerInstructions(tx);
-    const pumpFunIxs = paredIxs.filter((ix) =>
-        ix.programId.equals(PUMP_FUN_PROGRAM_ID),
-    );
-    
-    if (pumpFunIxs.length === 0) return;
-    
-    const events = PUMP_FUN_EVENT_PARSER.parseEvent(tx);
-    const parsedTxn = { instructions: pumpFunIxs, events };
-    
-    bnLayoutFormatter(parsedTxn);
-    
-    if (!parsedTxn) return;
-    
-    const tOutput = transactionOutput(parsedTxn);
-    
-    let swap: any = {}
-    swap.signature = tx.transaction.signatures[0];
-    swap.owner = tOutput.user;
-    swap.type = 'pump_fun';
-    
-    if (tOutput.type === 'BUY') {
-        swap.inMint = WSOL_ADDRESS;
-        swap.outMint = tOutput.mint;
-        swap.inAmount = tOutput.solAmount;
-        swap.outAmount = tOutput.tokenAmount;
-    } else {
-        swap.inMint = tOutput.mint;
-        swap.outMint = WSOL_ADDRESS;
-        swap.inAmount = tOutput.tokenAmount;
-        swap.outAmount = tOutput.solAmount;
+    try {
+        if (!tx.meta || tx.meta?.err) {
+            return null;
+        }
+        
+        const paredIxs = PUMP_FUN_IX_PARSER.parseTransactionWithInnerInstructions(tx);
+        const pumpFunIxs = paredIxs.filter((ix) =>
+            ix.programId.equals(PUMP_FUN_PROGRAM_ID),
+        );
+        
+        if (pumpFunIxs.length === 0) {
+            return null;
+        }
+        
+        const events = PUMP_FUN_EVENT_PARSER.parseEvent(tx);
+        const parsedTxn = { instructions: pumpFunIxs, events };
+        
+        bnLayoutFormatter(parsedTxn);
+        
+        if (!parsedTxn) {
+            return null;
+        }
+        
+        const tOutput = transactionOutput(parsedTxn);
+        
+        // Controlla se transactionOutput ha avuto successo
+        if (!tOutput || !tOutput.mint || !tOutput.user) {
+            console.error('Failed to parse Pumpfun transaction output');
+            return null;
+        }
+        
+        let swap: any = {}
+        swap.signature = tx.transaction.signatures[0];
+        swap.owner = tOutput.user;
+        swap.type = 'pump_fun';
+        
+        if (tOutput.type === 'BUY') {
+            swap.inMint = WSOL_ADDRESS;
+            swap.outMint = tOutput.mint;
+            swap.inAmount = tOutput.solAmount;
+            swap.outAmount = tOutput.tokenAmount;
+        } else {
+            swap.inMint = tOutput.mint;
+            swap.outMint = WSOL_ADDRESS;
+            swap.inAmount = tOutput.tokenAmount;
+            swap.outAmount = tOutput.solAmount;
+        }
+        
+        return swap;
+    } catch (error) {
+        console.error('Error decoding Pumpfun transaction:', error);
+        return null;
     }
-    
-    return swap;
 }
