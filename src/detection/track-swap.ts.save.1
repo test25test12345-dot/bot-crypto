@@ -1,0 +1,109 @@
+import Client, {
+2    CommitmentLevel,
+3    SubscribeRequestAccountsDataSlice,
+4    SubscribeRequestFilterAccounts,
+5    SubscribeRequestFilterBlocks,
+6    SubscribeRequestFilterBlocksMeta,
+7    SubscribeRequestFilterEntry,
+8    SubscribeRequestFilterSlots,
+9    SubscribeRequestFilterTransactions,
+10} from "@triton-one/yellowstone-grpc";
+11import { SubscribeRequestPing } from "@triton-one/yellowstone-grpc/dist/grpc/geyser";
+12import { getWallets } from "./wallets";
+13import { getJupiterSwapInfo } from "../jup-lib/jupiter-detection";
+14import bs58 from 'bs58'
+15import { LAMPORTS_PER_SOL, Message, PublicKey, VersionedTransactionResponse } from "@solana/web3.js";
+16import { JUPITER_V6_PROGRAM_ID } from "../jup-lib/constant";
+17import { MIN_TARGET_WALLETS, RayLiqPoolv4 } from "../global";
+18import { decodeRaydiumTxn } from "../raydium-lib/raydium-detection";
+19import { decodeRaydiumCpmmTxn } from "../raydium-lib/raydium-cpmm-detection";
+20import { WSOL_ADDRESS, USDC_ADDRESS, USDT_ADDRESS } from "../uniconst";
+21import { TransactionFormatter } from "./transaction-formatter";
+22import * as database from '../db'
+23import { getTokenPrice_, getTokenMcap, delayForTrxSync, getTokenInfo, getWalletTokenBalance, getTokenScore } from "../utils";
+24import * as instance from '../bot'
+25import { decodePumpfunTxn, PUMP_FUN_PROGRAM_ID } from "../pumpfun-lib/pumpfun-detection";
+26import { wallets } from "./config";
+27import { getMint } from "@solana/spl-token";
+28import * as afx from '../global'
+29import { Token } from "graphql";
+30import { tokenToString } from "typescript";
+31import path from 'path';
+32import fs from 'fs';
+33import TelegramBot from 'node-telegram-bot-api';
+34
+35const birdeyeApi: any = require("api")("@birdeyedotso/v1.0#crnv83jlti6buqu");
+36birdeyeApi.auth(process.env.BIRDEYE_API_KEY);
+37
+38// Inizializzazione bot Telegram con gestione errori
+39let alertBot: TelegramBot;
+40try {
+41    const botToken = process.env.ALERTS_BOT_TOKEN || process.env.BOT_TOKEN || '';
+42    if (!botToken) {
+43        console.error('⚠️ WARNING: No Telegram bot token found!');
+44    }
+45    alertBot = new TelegramBot(botToken, { polling: false });
+46    console.log('✅ Telegram bot initialized');
+47} catch (error) {
+48    console.error('❌ Failed to initialize Telegram bot:', error);
+49}
+50
+51// Funzione per inviare alert con retry logic
+52const sendAlert = async (chatId: string, message: string, retries: number = 3): Promise<boolean> => {
+53    for (let attempt = 1; attempt <= retries; attempt++) {
+54        try {
+55            console.log(`📤 Attempt ${attempt}/${retries} - Sending alert to: ${chatId}`);
+56            
+57            // Assicurati che il messaggio sia in UTF-8
+58            const utf8Message = Buffer.from(message, 'utf8').toString('utf8');
+59            
+60            await alertBot.sendMessage(chatId, utf8Message, {
+61                parse_mode: 'HTML',
+62                disable_web_page_preview: true
+63            });
+64            
+65            console.log(`✅ Alert sent successfully to: ${chatId}`);
+66            return true;
+67            
+68        } catch (error: any) {
+69            console.error(`❌ Attempt ${attempt}/${retries} failed for ${chatId}:`, error.message);
+70            
+71            if (attempt < retries) {
+72                const delay = attempt * 1000; // 1s, 2s, 3s
+73                console.log(`⏳ Waiting ${delay}ms before retry...`);
+74                await new Promise(resolve => setTimeout(resolve, delay));
+75            }
+76        }
+77    }
+78    
+79    console.error(`💥 Failed to send alert to ${chatId} after ${retries} attempts`);
+80    return false;
+81};
+82
+83const logToFile = (message: string) => {
+84    try {
+85        const logDir = path.join(__dirname, 'logs');
+86        if (!fs.existsSync(logDir)) {
+87            fs.mkdirSync(logDir, { recursive: true });
+88        }
+89        const logFilePath = path.join(logDir, 'track.log');
+90        const timestamp = new Date().toISOString();
+91        const logMessage = `[${timestamp}] ${message}\n`;
+92        fs.appendFileSync(logFilePath, logMessage, 'utf8');
+93    } catch (error) {
+94        console.error('Error writing to log file:', error);
+95    }
+96};
+97
+98interface SubscribeRequest {
+99    accounts: { [key: string]: SubscribeRequestFilterAccounts };
+100    slots: { [key: string]: SubscribeRequestFilterSlots };
+101    transactions: { [key: string]: SubscribeRequestFilterTransactions };
+102    transactionsStatus: { [key: string]: SubscribeRequestFilterTransactions };
+103    blocks: { [key: string]: SubscribeRequestFilterBlocks };
+104    blocksMeta: { [key: string]: SubscribeRequestFilterBlocksMeta };
+105    entry: { [key: string]: SubscribeRequestFilterEntry };
+106    commitment?: CommitmentLevel | undefined;
+107    accountsDataSlice: SubscribeRequestAccountsDataSlice[];
+108    ping?: SubscribeRequestPing | undefined;
+10

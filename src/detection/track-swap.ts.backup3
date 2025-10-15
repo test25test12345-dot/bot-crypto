@@ -30,27 +30,6 @@ import { Token } from "graphql";
 import { tokenToString } from "typescript";
 import path from 'path';
 import fs from 'fs';
-import TelegramBot from 'node-telegram-bot-api'
-
-const alertBot = new TelegramBot(process.env.ALERTS_BOT_TOKEN || process.env.BOT_TOKEN || '', {polling: false});
-
-// Lista nera di wallet da ignorare
-const BLACKLISTED_WALLETS = [
-    '4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf'
-];
-
-const sendAlert = async (chatId: string, message: string) => {
-    try {
-        const utf8Message = Buffer.from(message, 'utf8').toString('utf8');
-        await alertBot.sendMessage(chatId, utf8Message, { 
-            parse_mode: 'HTML', 
-            disable_web_page_preview: true 
-        });
-        console.log('Alert sent to:', chatId);
-    } catch (error: any) {
-        console.error('Failed to send to:', chatId, error.message);
-    }
-};
 
 const birdeyeApi: any = require("api")("@birdeyedotso/v1.0#crnv83jlti6buqu");
 birdeyeApi.auth(process.env.BIRDEYE_API_KEY);
@@ -58,16 +37,12 @@ birdeyeApi.auth(process.env.BIRDEYE_API_KEY);
 const logToFile = (message: string) => {
     try {
         const logDir = path.join(__dirname, 'logs');
-        const logFilePath = path.join(logDir, 'track.log');
-        
         if (!fs.existsSync(logDir)) {
             fs.mkdirSync(logDir, { recursive: true });
-            console.log('Created logs directory:', logDir);
         }
-        
+        const logFilePath = path.join(logDir, 'track.log');
         const timestamp = new Date().toISOString();
         const logMessage = `[${timestamp}] ${message}\n`;
-        
         fs.appendFileSync(logFilePath, logMessage, 'utf8');
     } catch (error) {
         console.error('Error writing to log file:', error);
@@ -91,8 +66,6 @@ const TXN_FORMATTER = new TransactionFormatter();
 
 const checkDB_Alert = async (buyWallets: any, old: any, swapData: any) => {
     try {
-        console.log("🚨 checkDB_Alert chiamato con", buyWallets.length, "wallet");
-        
         const sellWallets: any = await buyWallets.filter((wallet: any) => wallet.type === "sell")
         const tokenMCap: string = await getTokenMcap(swapData)
         const tokenInfo: any = await getTokenInfo(swapData)
@@ -100,7 +73,7 @@ const checkDB_Alert = async (buyWallets: any, old: any, swapData: any) => {
         console.log("solprice=====", solPrice)
         const extensions: any = tokenInfo.data?.extensions ?? null
         const positionTradeScore = await getTokenScore(buyWallets, swapData)
-        console.log("TradeScore:", positionTradeScore)
+        console.log("buyWallets=====", buyWallets)
 
         buyWallets.sort((a: any, b: any) => {
             if (a > b) {
@@ -111,136 +84,111 @@ const checkDB_Alert = async (buyWallets: any, old: any, swapData: any) => {
             return 0;
         });
 
-        logToFile(`Alert triggered for token: ${swapData.outMint}, ${tokenInfo.data?.name}`);
+        logToFile(`parsedTxn================== ${JSON.stringify(swapData.outMint)}, ${JSON.stringify(tokenInfo.data?.name)}`);
 
-        let message = '';
-        
-        message = message + '\n\u{1F4B8} <b>New smart holder entry</b>\n';
-        message = message + '\n\u{1F50E} <b>Address</b>: <code>' + swapData.outMint + '</code>';
-        message = message + '\n\u{1F4B0} <b>Name</b>: ' + (tokenInfo.data?.name ?? " ");
-        message = message + '\n\u{1F4C8} <b>MCap</b>: ' + tokenMCap;
+        let message = `
+💸 <b>New smart holder entry</b>
+
+🔎 <b>Address</b>: <code>${swapData.outMint}</code>
+💰 <b>Name</b>: ${tokenInfo.data?.name ?? " "}
+📈 <b>MCap</b>: ${tokenMCap}`
 
         if (extensions && extensions.website) {
-            message = message + '\n\u{1F517} <a href="' + extensions.website + '">Website</a>';
+            message = `${message}
+🔗 <a href="${extensions.website}">Website</a>`
         }
         if (extensions && extensions.twitter) {
-            message = message + '\n\u{1F517} <a href="' + extensions.twitter + '">Twitter</a>';
+            message = `${message}        
+🔗 <a href="${extensions.twitter}">Twitter</a>`
         }
         if (extensions && extensions.telegram) {
-            message = message + '\n\u{1F517} <a href="' + extensions.telegram + '">Telegram</a>';
+            message = `${message}        
+🔗 <a href="${extensions.telegram}">Telegram</a>`
         }
         if (extensions && extensions.discord) {
-            message = message + '\n\u{1F517} <a href="' + extensions.discord + '">Discord</a>';
+            message = `${message}        
+🔗 <a href="${extensions.discord}">Discord</a>`
         }
 
-        message = message + '\n\n\u{1F4AF} <b>TradeScore</b>: ' + positionTradeScore;
-        message = message + '\n\n\u{1F99A} <b>' + (buyWallets.length - sellWallets.length) + ' smart holders</b>';
-        
+        message = `${message}
+
+💯 <b>TradeScore</b>: ${positionTradeScore}
+
+🦚 <b>${buyWallets.length - sellWallets.length} smart holders</b>`
+
         for (let i = 0; i < buyWallets.length; i++) {
             if (buyWallets[i].type === "buy") {
                 console.log("buybalance===", buyWallets[i].inAmount, solPrice, buyWallets[i].txTime)
-                const amount = (buyWallets[i].inAmount / Math.pow(10, 9) * solPrice).toFixed(0);
-                message = message + '\n\u{1F7E2} ' + buyWallets[i].name + '  ($' + amount + ') (' + buyWallets[i].txTime + ')';
+                message = `${message}
+�� ${buyWallets[i].name}  ($${(buyWallets[i].inAmount / 10 ** 9 * solPrice).toFixed(0)}) (${buyWallets[i].txTime})`
             }
         }
 
-        message = message + '\n\n\u{2757} <b>' + sellWallets.length + ' close</b>';
+        message = `${message}
+
+❗ <b>${sellWallets.length} close</b>`
         
         for (let i = 0; i < buyWallets.length; i++) {
             if (buyWallets[i].type === "sell") {
-                message = message + '\n\u{1F534} ' + buyWallets[i].name;
+                message = `${message}
+🔴 ${buyWallets[i].name}`
             }
         }
 
-        message = message + '\n\n\u{26A1} <a href="https://jup.ag/swap/' + swapData.outMint + '-SOL">Jupiter</a>';
-        message = message + '\n\u{1F438} <a href="https://gmgn.ai/sol/token/' + swapData.outMint + '">Gmgn</a>';
-        message = message + '\n\u{1F680} <a href="https://photon-sol.tinyastro.io/en/lp/' + swapData.outMint + '">Photon</a>';
-        message = message + '\n\u{1F402} <a href="https://neo.bullx.io/terminal?chainId=1399811149&address=' + swapData.outMint + '">Bullx</a>';
+        message = `${message}
 
-        console.log('Preparing to send alerts...');
-        console.log('Message length:', message.length);
-        
-        await sendAlert('-1002359004329', message);
-        await sendAlert('-1002444321759', message);
-        
-        console.log('✅ Alerts sent successfully');
+⚡ <a href="https://jup.ag/swap/${swapData.outMint}-SOL">Jupiter</a>
+🐸 <a href="https://gmgn.ai/sol/token/${swapData.outMint}">Gmgn</a>
+🚀 <a href="https://photon-sol.tinyastro.io/en/lp/${swapData.outMint}">Photon</a>
+🐂 <a href="https://neo.bullx.io/terminal?chainId=1399811149&address=${swapData.outMint}">Bullx</a>`
+
+        instance.sendInfoMessage(process.env.GROUP_CHATID, message)
+        instance.sendInfoMessage(process.env.GROUP_CHATID1, message)
+        instance.sendInfoMessage(process.env.GROUP_CHATID2, message)
     } catch (error) {
-        console.error('❌ Error in checkDB_Alert:', error);
+        console.error('Error in checkDB_Alert:', error);
     }
 }
 
 const processSwapData = async (swap_data: any) => {
     try {
         if (!swap_data) {
-            console.log("❌ processSwapData called with null data");
+            console.log("processSwapData: swap_data is null/undefined");
             return
         }
         
-        console.log("�� SWAP DATA RECEIVED:", {
-            owner: swap_data.owner?.substring(0,8) + "...",
-            inMint: swap_data.inMint?.substring(0,8) + "...",
-            outMint: swap_data.outMint?.substring(0,8) + "...",
-            inAmount: swap_data.inAmount,
-            outAmount: swap_data.outAmount,
-            type: swap_data.type,
-            signature: swap_data.signature?.substring(0,8) + "..."
-        });
-        
-        // FILTRO 1: Blacklist esplicita
-        if (BLACKLISTED_WALLETS.includes(swap_data.owner)) {
-            console.log("❌ BLACKLISTED WALLET - IGNORED:", swap_data.owner);
-            return;
-        }
-        
-        // FILTRO 2: Whitelist - deve essere nella lista
-        const trackedWallet = wallets.find(w => w.address === swap_data.owner);
-        if (!trackedWallet) {
-            console.log("❌ NOT IN WHITELIST - IGNORED:", swap_data.owner);
-            return;
-        }
-        
-        // Log dettagliato per transazioni valide
         console.log("========================================");
-        console.log("✅ PROCESSING VALID SWAP:");
-        console.log("Wallet:", trackedWallet.name);
-        console.log("Address:", swap_data.owner);
+        console.log("PROCESSING SWAP DATA:");
+        console.log("Owner:", swap_data.owner);
         console.log("Type:", swap_data.type);
         console.log("inMint:", swap_data.inMint);
         console.log("outMint:", swap_data.outMint);
-        console.log("inAmount:", swap_data.inAmount);
-        console.log("outAmount:", swap_data.outAmount);
         console.log("Signature:", swap_data.signature);
         console.log("========================================");
 
-        let db_wallet: any = await database.selectTrackWallet({ wallet: swap_data.owner })
+        const db_wallet: any = await database.selectTrackWallet({ wallet: swap_data.owner })
         if (!db_wallet) {
-            console.log("⚠️ Wallet non trovato nel database, creazione in corso...");
-            await database.updateTrackWallet({ 
-                wallet: swap_data.owner, 
-                tokens: [], 
-                name: trackedWallet.name 
-            });
-            db_wallet = await database.selectTrackWallet({ wallet: swap_data.owner });
-            console.log("✅ Wallet creato nel database");
+            console.log("WALLET NOT IN TRACKING LIST:", swap_data.owner);
+            return
         }
         
+        console.log("WALLET FOUND IN DB:", db_wallet.name);
+        
         if (swap_data.inMint === WSOL_ADDRESS) {
-            // BUY logic
             if (swap_data.outMint === USDC_ADDRESS || swap_data.outMint === USDT_ADDRESS) {
-                console.log("Skip: stablecoin swap");
+                console.log("Skipping USDC/USDT swap");
                 return
             }
-            
-            console.log(`💚 BUY: ${trackedWallet.name} sta comprando token ${swap_data.outMint.substring(0,8)}...`);
             
             const date = new Date()
             const buytxTime = new Date();
 
             let token_index = db_wallet.tokens.findIndex((mint: any) => mint.mint === swap_data.outMint)
             if (token_index < 0) {
-                console.log("Nuovo token per questo wallet");
                 db_wallet.tokens.push({
-                    mint: swap_data.outMint, type: "buy", txTime: buytxTime.toLocaleString('en-US', {
+                    mint: swap_data.outMint, 
+                    type: "buy", 
+                    txTime: buytxTime.toLocaleString('en-US', {
                         hour12: false,
                         year: 'numeric',
                         month: '2-digit',
@@ -248,10 +196,11 @@ const processSwapData = async (swap_data: any) => {
                         hour: '2-digit',
                         minute: '2-digit',
                         second: '2-digit'
-                    }), inAmount: swap_data.inAmount
+                    }), 
+                    inAmount: swap_data.inAmount
                 })
+                console.log("NEW BUY - Added token to wallet");
             } else {
-                console.log("Token già esistente, aggiornamento");
                 db_wallet.tokens[token_index].type = "buy"
                 db_wallet.tokens[token_index].txTime = buytxTime.toLocaleString('en-US', {
                     hour12: false,
@@ -263,23 +212,28 @@ const processSwapData = async (swap_data: any) => {
                     second: '2-digit'
                 })
                 db_wallet.tokens[token_index].inAmount = Number(db_wallet.tokens[token_index].inAmount) + Number(swap_data.inAmount)
+                console.log("ADDITIONAL BUY - Updated token in wallet");
             }
 
             await database.updateTrackWallet({ wallet: swap_data.owner, tokens: db_wallet.tokens, name: db_wallet.name })
-            console.log("✅ Database wallet aggiornato");
+            console.log("Wallet updated in DB");
 
             const buyPosition: any = await database.selectTrackPosition({ token: swap_data.outMint })
-            console.log("Position esistente?", buyPosition ? "SI" : "NO");
 
             let openPosition: Boolean = false
             if (buyPosition && buyPosition.token) {
                 openPosition = true
+                console.log("Position already exists for token");
+                
                 let wallet_index: any = buyPosition.wallets.findIndex((wallet: any) => wallet.address === swap_data.owner)
                 
                 if (wallet_index < 0) {
-                    console.log("Aggiunta wallet alla posizione");
                     buyPosition.wallets.push({
-                        address: swap_data.owner, type: "buy", name: db_wallet.name, inAmount: swap_data.inAmount, txTime: buytxTime.toLocaleString('en-US', {
+                        address: swap_data.owner, 
+                        type: "buy", 
+                        name: db_wallet.name, 
+                        inAmount: swap_data.inAmount, 
+                        txTime: buytxTime.toLocaleString('en-US', {
                             hour12: false,
                             year: 'numeric',
                             month: '2-digit',
@@ -289,9 +243,8 @@ const processSwapData = async (swap_data: any) => {
                             second: '2-digit'
                         })
                     })
-                }
-                else {
-                    console.log("Aggiornamento wallet nella posizione");
+                    console.log("Added wallet to position");
+                } else {
                     buyPosition.wallets[wallet_index].type = "buy"
                     buyPosition.wallets[wallet_index].inAmount = swap_data.inAmount
                     buyPosition.wallets[wallet_index].txTime = buytxTime.toLocaleString('en-US', {
@@ -303,42 +256,47 @@ const processSwapData = async (swap_data: any) => {
                         minute: '2-digit',
                         second: '2-digit'
                     })
+                    console.log("Updated wallet in position");
                 }
 
                 const buysInPosition_old: any = buyPosition.wallets.filter((wallet: any) => wallet.type === "buy")
                 await database.updateTrackPosition({ token: swap_data.outMint, wallets: buyPosition.wallets, old: true })
                 const buysInPosition: any = buyPosition.wallets.filter((wallet: any) => wallet.type === "buy")
 
-                console.log(`Buyers: OLD=${buysInPosition_old.length} NEW=${buysInPosition.length}`);
+                console.log(`Buys in position: ${buysInPosition.length} (was ${buysInPosition_old.length})`);
 
                 if (buysInPosition && buysInPosition.length >= 3 && buysInPosition_old?.length != buysInPosition.length) {
-                    console.log(`🚨 ALERT TRIGGERED: ${buysInPosition.length} wallet hanno comprato ${swap_data.outMint}`);
+                    console.log("ALERT THRESHOLD REACHED - Sending alerts!");
                     await checkDB_Alert(buyPosition.wallets, buyPosition?.old, swap_data)
-                }
-                else if (buysInPosition.length < 3) {
-                    console.log("Meno di 3 buyer, rimuovo posizione");
+                } else if (buysInPosition.length < 3) {
+                    console.log("Less than 3 buys - Removing position");
                     await database.removeTrackPosition({ token: swap_data.outMint })
                     openPosition = false
                 }
             }
 
             if (!openPosition) {
-                console.log("Nessuna posizione aperta, controllo tutti i wallet...");
+                console.log("No open position - Checking all wallets");
                 let buycount = 0
                 let buyWallets: any = []
                 const trackWallets: any = await database.selectTrackWallets({})
-                console.log(`Controllo ${trackWallets.length} wallet totali`);
                 
                 for (const wallet of trackWallets) {
                     for (const token of wallet.tokens) {
                         if (token.mint === swap_data.outMint && token.type === "buy") {
                             buycount++
-                            buyWallets.push({ address: wallet.wallet, type: "buy", name: wallet.name, inAmount: token.inAmount, txTime: token.txTime })
+                            buyWallets.push({ 
+                                address: wallet.wallet, 
+                                type: "buy", 
+                                name: wallet.name, 
+                                inAmount: token.inAmount, 
+                                txTime: token.txTime 
+                            })
                         }
                     }
 
                     if (buycount >= 3 && buyWallets.length >= 3) {
-                        console.log(`🚨 NEW POSITION: ${buyWallets.length} wallet hanno comprato ${swap_data.outMint}`);
+                        console.log(`NEW POSITION CREATED - ${buyWallets.length} wallets buying`);
                         await database.updateTrackPosition({ token: swap_data.outMint, wallets: buyWallets, old: false })
                         await checkDB_Alert(buyWallets, buyPosition?.old, swap_data)
                         break
@@ -346,20 +304,17 @@ const processSwapData = async (swap_data: any) => {
                 }
                 
                 if (buycount < 3) {
-                    console.log(`Solo ${buycount} wallet hanno questo token, non abbastanza per un alert`);
+                    console.log(`Only ${buycount} buys - Not creating position yet`);
                 }
             }
         } else {
-            // SELL logic
+            // SELL
             if (swap_data.inMint === USDC_ADDRESS || swap_data.inMint === USDT_ADDRESS) {
-                console.log("Skip: stablecoin sell");
+                console.log("Skipping USDC/USDT sell");
                 return
             }
             
-            console.log(`🔴 SELL: ${trackedWallet.name} sta vendendo token ${swap_data.inMint.substring(0,8)}...`);
-            
             let solPrice: any = await getTokenPrice_(WSOL_ADDRESS)
-
             let token_index = db_wallet.tokens.findIndex((mint: any) => mint.mint === swap_data.inMint)
             let sellAvailable = false;
 
@@ -370,10 +325,8 @@ const processSwapData = async (swap_data: any) => {
                     if (Number(db_wallet.tokens[token_index].inAmount) < 0) db_wallet.tokens[token_index].inAmount = 0
                     await database.updateTrackWallet({ wallet: swap_data.owner, tokens: db_wallet.tokens, name: db_wallet.name })
                     sellAvailable = true
-                    console.log("✅ Sell registrato");
+                    console.log("SELL DETECTED - Position closed");
                 }
-            } else {
-                console.log("Token non trovato nel wallet");
             }
 
             if (sellAvailable) {
@@ -386,7 +339,7 @@ const processSwapData = async (swap_data: any) => {
                         
                         const buysInPosition: any = sellPosition.wallets.filter((wallet: any) => wallet.type === "buy")
                         if (buysInPosition.length >= 3) {
-                            console.log("🚨 SELL ALERT");
+                            console.log("SELL ALERT - Updating position");
                             await checkDB_Alert(sellPosition.wallets, true, swap_data)
                         }
                     }
@@ -396,14 +349,17 @@ const processSwapData = async (swap_data: any) => {
             await delayForTrxSync(swap_data.signature)
         }
     } catch (error) {
-        console.error('❌ Error in processSwapData:', error);
+        console.error('ERROR in processSwapData:', error);
     }
 }
 
 const parseTransfer = async (txn: any) => {
     try {
         const logMessages = txn.meta.logMessages
-        const owner = txn.transaction.message.versioned ? new PublicKey(Buffer.from(txn.transaction.message.accountKeys[0], "base64")) : Buffer.from(txn.transaction.message.accountKeys[0], "base64")
+        const owner = txn.transaction.message.versioned ? 
+            new PublicKey(Buffer.from(txn.transaction.message.accountKeys[0], "base64")) : 
+            Buffer.from(txn.transaction.message.accountKeys[0], "base64")
+            
         for (let message of logMessages) {
             if (!message.includes("11111111111111111111111111111111")) {
                 return
@@ -418,15 +374,14 @@ const parseTransfer = async (txn: any) => {
             for (let i = 1; i < preBalances.length - 2; i++) {
                 count++
                 const trasferAmount = (Number(postBalances[i]) - Number(preBalances[i])) / (10 ** 9)
-                message = `${message}
-    Amount: ${trasferAmount} SOL`
+                message = `${message}\n    Amount: ${trasferAmount} SOL`
             }
             if (count > 0) {
                 console.log(`Transfer detected: ${count} times`);
             }
         }
     } catch (error) {
-        console.log("Transfer detection error", error)
+        console.error("Transfer detection error:", error)
     }
 }
 
@@ -439,151 +394,105 @@ const parseTransaction = async (data: any) => {
             );
 
             const accountKeys = txn.transaction.message.staticAccountKeys
-            const signature = txn.transaction.signatures[0];
-            
-            // Log TUTTI gli account coinvolti nella transazione
-            const involvedAccounts = accountKeys.map((key: PublicKey) => key.toBase58());
-            
-            // Verifica quali dei nostri wallet sono coinvolti
-            const ourWallets = involvedAccounts.filter((acc: string) => 
-                wallets.some(w => w.address === acc)
-            );
-            
-            if (ourWallets.length > 0) {
-                console.log("✓ TRANSACTION WITH OUR WALLET:", signature);
-                console.log("  Our wallets:", ourWallets);
-            }
             
             // Jupiter
             const hasJupiter = accountKeys.find((programId: PublicKey) => {
-                if (programId.equals(JUPITER_V6_PROGRAM_ID)) {
-                    return true
-                } else {
-                    return false
-                }
+                return programId.equals(JUPITER_V6_PROGRAM_ID)
             })
+            
             if (hasJupiter) {
-                console.log("🟢 Jupiter transaction detected");
-                const ret = await getJupiterSwapInfo(txn)
-                if (ret) {
-                    console.log("✅ Jupiter swap decoded successfully:", {
-                        owner: ret.owner,
-                        inMint: ret.inMint?.substring(0,8) + "...",
-                        outMint: ret.outMint?.substring(0,8) + "...",
-                        type: ret.type
-                    });
-                    await processSwapData(ret)
-                } else {
-                    console.log("❌ Jupiter swap decode failed - returned null");
+                try {
+                    console.log("Jupiter transaction detected");
+                    const ret = await getJupiterSwapInfo(txn)
+                    if (ret) {
+                        await processSwapData(ret)
+                    }
+                } catch (error) {
+                    console.error('Error processing Jupiter swap:', error);
                 }
                 return
             }
             
             // Raydium CPMM
             const hasCpmm = accountKeys.find((programId: PublicKey) => {
-                if (programId.equals(new PublicKey("CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C"))) {
-                    return true
-                } else {
-                    return false
-                }
+                return programId.equals(new PublicKey("CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C"))
             })
+            
             if (hasCpmm) {
-                console.log("🟢 Raydium CPMM transaction detected");
-                const txn = TXN_FORMATTER.formTransactionFromJson(
-                    data.transaction,
-                    Date.now()
-                );
-                const ret = await decodeRaydiumCpmmTxn(txn)
-                if (ret) {
-                    console.log("✅ Raydium CPMM swap decoded successfully:", {
-                        owner: ret.owner,
-                        inMint: ret.inMint?.substring(0,8) + "...",
-                        outMint: ret.outMint?.substring(0,8) + "...",
-                        type: ret.type
-                    });
-                    await processSwapData(ret)
-                } else {
-                    console.log("❌ Raydium CPMM swap decode failed - returned null");
+                try {
+                    console.log("Raydium CPMM transaction detected");
+                    const ret = await decodeRaydiumCpmmTxn(txn)
+                    if (ret) {
+                        await processSwapData(ret)
+                    }
+                } catch (error) {
+                    console.error('Error processing Raydium CPMM swap:', error);
                 }
                 return
             }
 
-            // Raydium
+            // Raydium AMM
             const hasRaydium = accountKeys.find((programId: PublicKey) => {
-                if (programId.equals(RayLiqPoolv4)) {
-                    return true
-                } else {
-                    return false
-                }
+                return programId.equals(RayLiqPoolv4)
             })
+
             if (hasRaydium) {
-                console.log("🟢 Raydium transaction detected");
-                const txn = TXN_FORMATTER.formTransactionFromJson(
-                    data.transaction,
-                    Date.now()
-                );
-                const ret = await decodeRaydiumTxn(txn)
-                if (ret) {
-                    console.log("✅ Raydium swap decoded successfully:", {
-                        owner: ret.owner,
-                        inMint: ret.inMint?.substring(0,8) + "...",
-                        outMint: ret.outMint?.substring(0,8) + "...",
-                        type: ret.type
-                    });
-                    await processSwapData(ret)
-                } else {
-                    console.log("❌ Raydium swap decode failed - returned null");
+                try {
+                    console.log("Raydium AMM transaction detected");
+                    const ret = await decodeRaydiumTxn(txn)
+                    if (ret) {
+                        await processSwapData(ret)
+                    }
+                } catch (error) {
+                    console.error('Error processing Raydium AMM swap:', error);
                 }
                 return
             }
             
             // PumpFun
             const hasPumpFun = accountKeys.find((programId: PublicKey) => {
-                if (programId.equals(PUMP_FUN_PROGRAM_ID)) {
-                    return true
-                } else {
-                    return false
-                }
+                return programId.equals(PUMP_FUN_PROGRAM_ID)
             })
+            
             if (hasPumpFun) {
-                console.log("🟢 PumpFun transaction detected");
-                const ret = await decodePumpfunTxn(txn)
-                if (ret) {
-                    console.log("✅ PumpFun swap decoded successfully:", {
-                        owner: ret.owner,
-                        inMint: ret.inMint?.substring(0,8) + "...",
-                        outMint: ret.outMint?.substring(0,8) + "...",
-                        type: ret.type
-                    });
-                    await processSwapData(ret)
-                } else {
-                    console.log("❌ PumpFun swap decode failed - returned null");
+                try {
+                    console.log("PumpFun transaction detected");
+                    const ret = await decodePumpfunTxn(txn)
+                    console.log("PumpFun decode result:", ret ? "Success" : "Failed/Null");
+                    if (ret) {
+                        await processSwapData(ret)
+                    } else {
+                        console.log("PumpFun decode returned null - transaction skipped");
+                    }
+                } catch (error) {
+                    console.error('Error processing PumpFun swap:', error);
                 }
                 return
             }
-            
-            // Se nessun DEX è stato rilevato ma è una transazione dei nostri wallet
-            if (ourWallets.length > 0) {
-                console.log("⚠️ Transaction from our wallet but NO DEX detected");
-                console.log("  Programs in transaction:", accountKeys.slice(0,5).map(k => k.toBase58().substring(0,8) + "..."));
+        }
+        
+        if (data.transaction !== undefined) {
+            try {
+                await parseTransfer(data.transaction["transaction"])
+            } catch (error) {
+                console.error('Error parsing transfer:', error);
             }
         }
     } catch (error) {
-        console.error('❌ Error parsing transaction:', error);
+        console.error('ERROR parsing transaction:', error);
     }
 }
 
 async function handleStream(client: Client, args: SubscribeRequest) {
     console.log('Stream connecting...');
     const stream = await client.subscribe();
-    console.log('Stream connected successfully');
+    console.log('Stream connected');
     
     let lastDataTime = Date.now();
-    let transactionCount = 0;
     
     const heartbeat = setInterval(() => {
         const timeSinceLastData = Date.now() - lastDataTime;
-        console.log(`Stream alive - last data: ${Math.floor(timeSinceLastData / 1000)}s ago, processed: ${transactionCount} transactions`);
+        console.log(`Stream alive - last data: ${Math.floor(timeSinceLastData / 1000)}s ago`);
         
         if (timeSinceLastData > 300000) {
             console.log('Stream seems dead, forcing reconnection...');
@@ -613,10 +522,6 @@ async function handleStream(client: Client, args: SubscribeRequest) {
 
     stream.on("data", (data) => {
         lastDataTime = Date.now();
-        transactionCount++;
-        if (transactionCount % 100 === 0) {
-            console.log(`Processed ${transactionCount} transactions`);
-        }
         parseTransaction(data)
     });
 
@@ -639,7 +544,7 @@ async function handleStream(client: Client, args: SubscribeRequest) {
 async function subscribeCommand(client: Client, args: SubscribeRequest) {
     while (true) {
         try {
-            console.log("Starting Substream server...")
+            console.log("Start Substream server")
             await handleStream(client, args);
         } catch (error) {
             console.error("Stream error, restarting in 1 second...", error);
@@ -651,33 +556,11 @@ async function subscribeCommand(client: Client, args: SubscribeRequest) {
 const client = new Client('https://grpc.eu.shyft.to', process.env.GRPC_TOKEN, undefined);
 
 export const start = async () => {
-    console.log("================================");
-    console.log('TRACK-SWAP INITIALIZATION');
-    console.log("================================");
-    console.log('Telegram Bot Token:', process.env.ALERTS_BOT_TOKEN || process.env.BOT_TOKEN ? '✓' : '✗');
-    console.log('GRPC Token:', process.env.GRPC_TOKEN ? '✓' : '✗');
-    console.log('GRPC Endpoint: https://grpc.eu.shyft.to');
+    console.log('Initializing track-swap...');
+    console.log('GRPC Token:', process.env.GRPC_TOKEN ? 'OK' : 'MISSING');
     
     let detection_wallets: string[] = await getWallets()
-    console.log('Total wallets to track:', detection_wallets.length);
-    
-    // Verifica specifici wallet
-    const testWallets = [
-        'prED5Hv9jaZmKRw7NcENdUMu6Pw2NWBmN2DSAEbNP7Y', // pooh1
-        'pp2rgZ8Bshvc1XHCerHJH77fNA7AGQND8D9zfW2AeVb', // pooh2
-        '4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf' // wallet problematico
-    ];
-    
-    for (let wallet of testWallets) {
-        if (detection_wallets.includes(wallet)) {
-            console.log(`✓ ${wallet.substring(0,8)}... è nella lista di tracking`);
-        } else {
-            console.log(`✗ ${wallet.substring(0,8)}... NON è nella lista di tracking`);
-        }
-    }
-    
-    console.log("================================");
-    console.log("Starting gRPC stream subscription...");
+    console.log(`Tracking ${detection_wallets.length} wallets`);
     
     const req: SubscribeRequest = {
         accounts: {},
@@ -701,6 +584,5 @@ export const start = async () => {
         commitment: CommitmentLevel.CONFIRMED,
     };
     
-    console.log("Subscription request created with", detection_wallets.length, "wallets");
     subscribeCommand(client, req);
 }
