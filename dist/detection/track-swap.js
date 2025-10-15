@@ -65,25 +65,23 @@ const sendAlert = async (chatId, message) => {
             parse_mode: 'HTML',
             disable_web_page_preview: true
         });
-        console.log('Alert sent to:', chatId);
+        logToFile('✅ Alert sent to: ' + chatId);
     }
     catch (error) {
-        console.error('Failed to send to:', chatId, error.message);
+        logToFile('❌ Failed to send to: ' + chatId + ' - ' + error.message);
     }
 };
-const birdeyeApi = require("api")("@birdeyedotso/v1.0#crnv83jlti6buqu");
-birdeyeApi.auth(process.env.BIRDEYE_API_KEY);
 const logToFile = (message) => {
     try {
         const logDir = path_1.default.join(__dirname, 'logs');
-        const logFilePath = path_1.default.join(logDir, 'track.log');
+        const logFilePath = path_1.default.join(logDir, 'track-debug.log');
         if (!fs_1.default.existsSync(logDir)) {
             fs_1.default.mkdirSync(logDir, { recursive: true });
-            console.log('Created logs directory:', logDir);
         }
         const timestamp = new Date().toISOString();
         const logMessage = `[${timestamp}] ${message}\n`;
         fs_1.default.appendFileSync(logFilePath, logMessage, 'utf8');
+        console.log(message);
     }
     catch (error) {
         console.error('Error writing to log file:', error);
@@ -92,14 +90,19 @@ const logToFile = (message) => {
 const TXN_FORMATTER = new transaction_formatter_1.TransactionFormatter();
 const checkDB_Alert = async (buyWallets, old, swapData) => {
     try {
+        logToFile(`🚨 checkDB_Alert START - Token: ${swapData.outMint}`);
+        logToFile(`   Total wallets: ${buyWallets.length}`);
         const sellWallets = await buyWallets.filter((wallet) => wallet.type === "sell");
+        logToFile(`   Sell wallets: ${sellWallets.length}`);
         const tokenMCap = await (0, utils_1.getTokenMcap)(swapData);
+        logToFile(`   MCap: ${tokenMCap}`);
         const tokenInfo = await (0, utils_1.getTokenInfo)(swapData);
+        logToFile(`   Token name: ${tokenInfo.data?.name || 'N/A'}`);
         const solPrice = await (0, utils_1.getTokenPrice_)(swapData.inMint);
-        console.log("solprice=====", solPrice);
+        logToFile(`   SOL Price: ${solPrice}`);
         const extensions = tokenInfo.data?.extensions ?? null;
         const positionTradeScore = await (0, utils_1.getTokenScore)(buyWallets, swapData);
-        console.log("buyWallets=====", buyWallets);
+        logToFile(`   TradeScore: ${positionTradeScore}`);
         buyWallets.sort((a, b) => {
             if (a > b) {
                 return -1;
@@ -109,7 +112,6 @@ const checkDB_Alert = async (buyWallets, old, swapData) => {
             }
             return 0;
         });
-        logToFile(`Alert triggered for token: ${swapData.outMint}, ${tokenInfo.data?.name}`);
         let message = '';
         message = message + '\n\u{1F4B8} <b>New smart holder entry</b>\n';
         message = message + '\n\u{1F50E} <b>Address</b>: <code>' + swapData.outMint + '</code>';
@@ -131,7 +133,6 @@ const checkDB_Alert = async (buyWallets, old, swapData) => {
         message = message + '\n\n\u{1F99A} <b>' + (buyWallets.length - sellWallets.length) + ' smart holders</b>';
         for (let i = 0; i < buyWallets.length; i++) {
             if (buyWallets[i].type === "buy") {
-                console.log("buybalance===", buyWallets[i].inAmount, solPrice, buyWallets[i].txTime);
                 const amount = (buyWallets[i].inAmount / Math.pow(10, 9) * solPrice).toFixed(0);
                 message = message + '\n\u{1F7E2} ' + buyWallets[i].name + '  ($' + amount + ') (' + buyWallets[i].txTime + ')';
             }
@@ -146,57 +147,70 @@ const checkDB_Alert = async (buyWallets, old, swapData) => {
         message = message + '\n\u{1F438} <a href="https://gmgn.ai/sol/token/' + swapData.outMint + '">Gmgn</a>';
         message = message + '\n\u{1F680} <a href="https://photon-sol.tinyastro.io/en/lp/' + swapData.outMint + '">Photon</a>';
         message = message + '\n\u{1F402} <a href="https://neo.bullx.io/terminal?chainId=1399811149&address=' + swapData.outMint + '">Bullx</a>';
-        console.log('Preparing to send alerts...');
+        logToFile('📤 Preparing to send alerts...');
         await sendAlert('-1002359004329', message);
         await sendAlert('-1002444321759', message);
+        logToFile('✅ checkDB_Alert COMPLETE');
     }
     catch (error) {
-        console.error('Error in checkDB_Alert:', error);
+        logToFile(`❌ ERROR in checkDB_Alert: ${error}`);
+        console.error('❌ Error in checkDB_Alert:', error);
     }
 };
 const processSwapData = async (swap_data) => {
     try {
+        logToFile("========================================");
+        logToFile("📊 processSwapData CALLED");
         if (!swap_data) {
+            logToFile("❌ swap_data is NULL - returning");
             return;
         }
+        logToFile(`✅ swap_data VALID`);
+        logToFile(`   Owner: ${swap_data.owner}`);
+        logToFile(`   Type: ${swap_data.type}`);
+        logToFile(`   inMint: ${swap_data.inMint}`);
+        logToFile(`   outMint: ${swap_data.outMint}`);
+        logToFile(`   inAmount: ${swap_data.inAmount}`);
+        logToFile(`   outAmount: ${swap_data.outAmount}`);
+        logToFile(`   Signature: ${swap_data.signature}`);
         if (BLACKLISTED_WALLETS.includes(swap_data.owner)) {
-            console.log("❌ BLACKLISTED WALLET - IGNORED:", swap_data.owner);
+            logToFile(`❌ BLACKLISTED - ${swap_data.owner}`);
             return;
         }
         const trackedWallet = config_1.wallets.find(w => w.address === swap_data.owner);
         if (!trackedWallet) {
-            console.log("❌ NOT IN WHITELIST - IGNORED:", swap_data.owner);
+            logToFile(`❌ NOT IN WHITELIST - ${swap_data.owner}`);
             return;
         }
-        console.log("========================================");
-        console.log("✅ PROCESSING VALID SWAP:");
-        console.log("Wallet:", trackedWallet.name);
-        console.log("Address:", swap_data.owner);
-        console.log("Type:", swap_data.type);
-        console.log("inMint:", swap_data.inMint);
-        console.log("outMint:", swap_data.outMint);
-        console.log("Signature:", swap_data.signature);
-        console.log("========================================");
-        const db_wallet = await database.selectTrackWallet({ wallet: swap_data.owner });
+        logToFile(`✅ WALLET OK: ${trackedWallet.name}`);
+        let db_wallet = await database.selectTrackWallet({ wallet: swap_data.owner });
         if (!db_wallet) {
-            console.log("Wallet non trovato nel database, creazione in corso...");
+            logToFile("⚠️ Wallet NOT in DB - creating...");
             await database.updateTrackWallet({
                 wallet: swap_data.owner,
                 tokens: [],
                 name: trackedWallet.name
             });
-            const db_wallet = await database.selectTrackWallet({ wallet: swap_data.owner });
+            db_wallet = await database.selectTrackWallet({ wallet: swap_data.owner });
+            logToFile("✅ Wallet created in DB");
+        }
+        else {
+            logToFile(`✅ Wallet found in DB: ${db_wallet.name}`);
         }
         if (swap_data.inMint === uniconst_1.WSOL_ADDRESS) {
-            if (swap_data.outMint === uniconst_1.USDC_ADDRESS || swap_data.outMint === uniconst_1.USDT_ADDRESS)
+            if (swap_data.outMint === uniconst_1.USDC_ADDRESS || swap_data.outMint === uniconst_1.USDT_ADDRESS) {
+                logToFile("⭕ Skip: stablecoin swap");
                 return;
-            console.log(`💚 BUY: ${trackedWallet.name} sta comprando token ${swap_data.outMint.substring(0, 8)}...`);
-            const date = new Date();
+            }
+            logToFile(`💚 BUY DETECTED: ${trackedWallet.name} -> ${swap_data.outMint.substring(0, 8)}...`);
             const buytxTime = new Date();
             let token_index = db_wallet.tokens.findIndex((mint) => mint.mint === swap_data.outMint);
-            if (token_index < 0)
+            if (token_index < 0) {
+                logToFile("➕ New token for this wallet");
                 db_wallet.tokens.push({
-                    mint: swap_data.outMint, type: "buy", txTime: buytxTime.toLocaleString('en-US', {
+                    mint: swap_data.outMint,
+                    type: "buy",
+                    txTime: buytxTime.toLocaleString('en-US', {
                         hour12: false,
                         year: 'numeric',
                         month: '2-digit',
@@ -204,9 +218,12 @@ const processSwapData = async (swap_data) => {
                         hour: '2-digit',
                         minute: '2-digit',
                         second: '2-digit'
-                    }), inAmount: swap_data.inAmount
+                    }),
+                    inAmount: swap_data.inAmount
                 });
+            }
             else {
+                logToFile("🔄 Existing token - updating");
                 db_wallet.tokens[token_index].type = "buy";
                 db_wallet.tokens[token_index].txTime = buytxTime.toLocaleString('en-US', {
                     hour12: false,
@@ -220,14 +237,21 @@ const processSwapData = async (swap_data) => {
                 db_wallet.tokens[token_index].inAmount = Number(db_wallet.tokens[token_index].inAmount) + Number(swap_data.inAmount);
             }
             await database.updateTrackWallet({ wallet: swap_data.owner, tokens: db_wallet.tokens, name: db_wallet.name });
+            logToFile("✅ Wallet updated in DB");
             const buyPosition = await database.selectTrackPosition({ token: swap_data.outMint });
+            logToFile(`Position check: ${buyPosition ? "EXISTS" : "NEW"}`);
             let openPosition = false;
             if (buyPosition && buyPosition.token) {
                 openPosition = true;
                 let wallet_index = buyPosition.wallets.findIndex((wallet) => wallet.address === swap_data.owner);
                 if (wallet_index < 0) {
+                    logToFile("➕ Adding wallet to position");
                     buyPosition.wallets.push({
-                        address: swap_data.owner, type: "buy", name: db_wallet.name, inAmount: swap_data.inAmount, txTime: buytxTime.toLocaleString('en-US', {
+                        address: swap_data.owner,
+                        type: "buy",
+                        name: db_wallet.name,
+                        inAmount: swap_data.inAmount,
+                        txTime: buytxTime.toLocaleString('en-US', {
                             hour12: false,
                             year: 'numeric',
                             month: '2-digit',
@@ -239,6 +263,7 @@ const processSwapData = async (swap_data) => {
                     });
                 }
                 else {
+                    logToFile("🔄 Updating wallet in position");
                     buyPosition.wallets[wallet_index].type = "buy";
                     buyPosition.wallets[wallet_index].inAmount = swap_data.inAmount;
                     buyPosition.wallets[wallet_index].txTime = buytxTime.toLocaleString('en-US', {
@@ -254,39 +279,58 @@ const processSwapData = async (swap_data) => {
                 const buysInPosition_old = buyPosition.wallets.filter((wallet) => wallet.type === "buy");
                 await database.updateTrackPosition({ token: swap_data.outMint, wallets: buyPosition.wallets, old: true });
                 const buysInPosition = buyPosition.wallets.filter((wallet) => wallet.type === "buy");
+                logToFile(`📊 Buyers: OLD=${buysInPosition_old.length} NEW=${buysInPosition.length}`);
                 if (buysInPosition && buysInPosition.length >= 3 && buysInPosition_old?.length != buysInPosition.length) {
-                    console.log(`🚨 ALERT TRIGGERED: ${buysInPosition.length} wallet hanno comprato ${swap_data.outMint}`);
+                    logToFile(`🚨🚨🚨 ALERT TRIGGER: ${buysInPosition.length} buyers found!`);
                     await checkDB_Alert(buyPosition.wallets, buyPosition?.old, swap_data);
                 }
                 else if (buysInPosition.length < 3) {
+                    logToFile(`⭕ Less than 3 buyers (${buysInPosition.length}), removing position`);
                     await database.removeTrackPosition({ token: swap_data.outMint });
                     openPosition = false;
                 }
+                else {
+                    logToFile(`⭕ Alert already sent (old=${buysInPosition_old.length}, new=${buysInPosition.length})`);
+                }
             }
             if (!openPosition) {
+                logToFile("🔍 No open position - checking all wallets...");
                 let buycount = 0;
                 let buyWallets = [];
                 const trackWallets = await database.selectTrackWallets({});
+                logToFile(`📊 Checking ${trackWallets.length} total wallets in DB`);
                 for (const wallet of trackWallets) {
                     for (const token of wallet.tokens) {
                         if (token.mint === swap_data.outMint && token.type === "buy") {
                             buycount++;
-                            buyWallets.push({ address: wallet.wallet, type: "buy", name: wallet.name, inAmount: token.inAmount, txTime: token.txTime });
+                            buyWallets.push({
+                                address: wallet.wallet,
+                                type: "buy",
+                                name: wallet.name,
+                                inAmount: token.inAmount,
+                                txTime: token.txTime
+                            });
+                            logToFile(`  ✓ ${wallet.name} has this token`);
                         }
                     }
-                    if (buycount >= 3 && buyWallets.length >= 3) {
-                        console.log(`🚨 NEW POSITION: ${buyWallets.length} wallet hanno comprato ${swap_data.outMint}`);
-                        await database.updateTrackPosition({ token: swap_data.outMint, wallets: buyWallets, old: false });
-                        await checkDB_Alert(buyWallets, buyPosition?.old, swap_data);
-                        break;
-                    }
+                }
+                logToFile(`📊 Found ${buycount} wallets with this token`);
+                if (buycount >= 3 && buyWallets.length >= 3) {
+                    logToFile(`🚨🚨🚨 NEW POSITION ALERT: ${buyWallets.length} buyers!`);
+                    await database.updateTrackPosition({ token: swap_data.outMint, wallets: buyWallets, old: false });
+                    await checkDB_Alert(buyWallets, false, swap_data);
+                }
+                else {
+                    logToFile(`⭕ Only ${buycount} wallets, need 3 for alert`);
                 }
             }
         }
         else {
-            if (swap_data.inMint === uniconst_1.USDC_ADDRESS || swap_data.inMint === uniconst_1.USDT_ADDRESS)
+            if (swap_data.inMint === uniconst_1.USDC_ADDRESS || swap_data.inMint === uniconst_1.USDT_ADDRESS) {
+                logToFile("⭕ Skip: stablecoin sell");
                 return;
-            console.log(`🔴 SELL: ${trackedWallet.name} sta vendendo token ${swap_data.inMint.substring(0, 8)}...`);
+            }
+            logToFile(`🔴 SELL DETECTED: ${trackedWallet.name} -> ${swap_data.inMint.substring(0, 8)}...`);
             let solPrice = await (0, utils_1.getTokenPrice_)(uniconst_1.WSOL_ADDRESS);
             let token_index = db_wallet.tokens.findIndex((mint) => mint.mint === swap_data.inMint);
             let sellAvailable = false;
@@ -298,7 +342,11 @@ const processSwapData = async (swap_data) => {
                         db_wallet.tokens[token_index].inAmount = 0;
                     await database.updateTrackWallet({ wallet: swap_data.owner, tokens: db_wallet.tokens, name: db_wallet.name });
                     sellAvailable = true;
+                    logToFile("✅ Sell registered");
                 }
+            }
+            else {
+                logToFile("⚠️ Token not found in wallet for sell");
             }
             if (sellAvailable) {
                 const sellPosition = await database.selectTrackPosition({ token: swap_data.inMint });
@@ -309,6 +357,7 @@ const processSwapData = async (swap_data) => {
                         await database.updateTrackPosition({ token: swap_data.inMint, wallets: sellPosition.wallets, old: true });
                         const buysInPosition = sellPosition.wallets.filter((wallet) => wallet.type === "buy");
                         if (buysInPosition.length >= 3) {
+                            logToFile("🚨 SELL ALERT");
                             await checkDB_Alert(sellPosition.wallets, true, swap_data);
                         }
                     }
@@ -316,38 +365,11 @@ const processSwapData = async (swap_data) => {
             }
             await (0, utils_1.delayForTrxSync)(swap_data.signature);
         }
+        logToFile("========================================");
     }
     catch (error) {
-        console.error('Error in processSwapData:', error);
-    }
-};
-const parseTransfer = async (txn) => {
-    try {
-        const logMessages = txn.meta.logMessages;
-        const owner = txn.transaction.message.versioned ? new web3_js_1.PublicKey(Buffer.from(txn.transaction.message.accountKeys[0], "base64")) : Buffer.from(txn.transaction.message.accountKeys[0], "base64");
-        for (let message of logMessages) {
-            if (!message.includes("11111111111111111111111111111111")) {
-                return;
-            }
-        }
-        const preBalances = txn.meta.preBalances;
-        const postBalances = txn.meta.postBalances;
-        if (preBalances && postBalances && preBalances.length > 3 && postBalances.length > 3 && preBalances.length === postBalances.length) {
-            let count = 0;
-            let message = `owner: ${owner}`;
-            for (let i = 1; i < preBalances.length - 2; i++) {
-                count++;
-                const trasferAmount = (Number(postBalances[i]) - Number(preBalances[i])) / (10 ** 9);
-                message = `${message}
-    Amount: ${trasferAmount} SOL`;
-            }
-            if (count > 0) {
-                console.log(`Transfer detected: ${count} times`);
-            }
-        }
-    }
-    catch (error) {
-        console.log("Transfer detection error", error);
+        logToFile(`❌ ERROR in processSwapData: ${error}`);
+        console.error('❌ Error in processSwapData:', error);
     }
 };
 const parseTransaction = async (data) => {
@@ -359,106 +381,127 @@ const parseTransaction = async (data) => {
             const involvedAccounts = accountKeys.map((key) => key.toBase58());
             const ourWallets = involvedAccounts.filter((acc) => config_1.wallets.some(w => w.address === acc));
             if (ourWallets.length > 0) {
-                console.log("✓ TRANSACTION WITH OUR WALLET:", signature);
-                console.log("  Our wallets:", ourWallets);
+                logToFile(`✓ TRANSACTION WITH OUR WALLET: ${signature}`);
+                logToFile(`  Our wallets involved: ${ourWallets.join(', ')}`);
             }
-            const hasJupiter = accountKeys.find((programId) => {
-                if (programId.equals(constant_1.JUPITER_V6_PROGRAM_ID)) {
-                    return true;
-                }
-                else {
-                    return false;
-                }
-            });
+            const hasJupiter = accountKeys.find((programId) => programId.equals(constant_1.JUPITER_V6_PROGRAM_ID));
             if (hasJupiter) {
-                console.log("Jupiter transaction detected");
-                const ret = await (0, jupiter_detection_1.getJupiterSwapInfo)(txn);
-                processSwapData(ret);
+                logToFile("🟢 Jupiter transaction detected");
+                try {
+                    const ret = await (0, jupiter_detection_1.getJupiterSwapInfo)(txn);
+                    if (ret) {
+                        logToFile(`✅ Jupiter decode OK - proceeding to processSwapData`);
+                        await processSwapData(ret);
+                    }
+                    else {
+                        logToFile("❌ Jupiter decode returned NULL");
+                    }
+                }
+                catch (error) {
+                    logToFile(`❌ Jupiter decode ERROR: ${error}`);
+                }
                 return;
             }
-            const hasCpmm = accountKeys.find((programId) => {
-                if (programId.equals(new web3_js_1.PublicKey("CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C"))) {
-                    return true;
-                }
-                else {
-                    return false;
-                }
-            });
+            const hasCpmm = accountKeys.find((programId) => programId.equals(new web3_js_1.PublicKey("CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C")));
             if (hasCpmm) {
-                console.log("Raydium CPMM transaction detected");
-                const txn = TXN_FORMATTER.formTransactionFromJson(data.transaction, Date.now());
-                const ret = await (0, raydium_cpmm_detection_1.decodeRaydiumCpmmTxn)(txn);
-                processSwapData(ret);
+                logToFile("🟢 Raydium CPMM transaction detected");
+                try {
+                    const txn = TXN_FORMATTER.formTransactionFromJson(data.transaction, Date.now());
+                    const ret = await (0, raydium_cpmm_detection_1.decodeRaydiumCpmmTxn)(txn);
+                    if (ret) {
+                        logToFile(`✅ Raydium CPMM decode OK - proceeding to processSwapData`);
+                        await processSwapData(ret);
+                    }
+                    else {
+                        logToFile("❌ Raydium CPMM decode returned NULL");
+                    }
+                }
+                catch (error) {
+                    logToFile(`❌ Raydium CPMM decode ERROR: ${error}`);
+                }
                 return;
             }
-            const hasRaydium = accountKeys.find((programId) => {
-                if (programId.equals(global_1.RayLiqPoolv4)) {
-                    return true;
-                }
-                else {
-                    return false;
-                }
-            });
+            const hasRaydium = accountKeys.find((programId) => programId.equals(global_1.RayLiqPoolv4));
             if (hasRaydium) {
-                console.log("Raydium transaction detected");
-                const txn = TXN_FORMATTER.formTransactionFromJson(data.transaction, Date.now());
-                const ret = await (0, raydium_detection_1.decodeRaydiumTxn)(txn);
-                processSwapData(ret);
+                logToFile("�� Raydium transaction detected");
+                try {
+                    const txn = TXN_FORMATTER.formTransactionFromJson(data.transaction, Date.now());
+                    const ret = await (0, raydium_detection_1.decodeRaydiumTxn)(txn);
+                    if (ret) {
+                        logToFile(`✅ Raydium decode OK - proceeding to processSwapData`);
+                        await processSwapData(ret);
+                    }
+                    else {
+                        logToFile("❌ Raydium decode returned NULL");
+                    }
+                }
+                catch (error) {
+                    logToFile(`❌ Raydium decode ERROR: ${error}`);
+                }
                 return;
             }
-            const hasPumpFun = accountKeys.find((programId) => {
-                if (programId.equals(pumpfun_detection_1.PUMP_FUN_PROGRAM_ID)) {
-                    return true;
-                }
-                else {
-                    return false;
-                }
-            });
+            const hasPumpFun = accountKeys.find((programId) => programId.equals(pumpfun_detection_1.PUMP_FUN_PROGRAM_ID));
             if (hasPumpFun) {
-                console.log("PumpFun transaction detected");
-                const ret = await (0, pumpfun_detection_1.decodePumpfunTxn)(txn);
-                console.log("PumpFun decode result:", ret ? "Success" : "Failed");
-                processSwapData(ret);
+                logToFile("🟢 PumpFun transaction detected");
+                try {
+                    const ret = await (0, pumpfun_detection_1.decodePumpfunTxn)(txn);
+                    if (ret) {
+                        logToFile(`✅ PumpFun decode OK - proceeding to processSwapData`);
+                        logToFile(`   Owner: ${ret.owner}`);
+                        logToFile(`   Type: ${ret.type}`);
+                        logToFile(`   inMint: ${ret.inMint}`);
+                        logToFile(`   outMint: ${ret.outMint}`);
+                        await processSwapData(ret);
+                    }
+                    else {
+                        logToFile("❌ PumpFun decode returned NULL");
+                    }
+                }
+                catch (error) {
+                    logToFile(`❌ PumpFun decode ERROR: ${error}`);
+                }
                 return;
             }
-        }
-        if (data.transaction !== undefined) {
-            const ret = await parseTransfer(data.transaction["transaction"]);
+            if (ourWallets.length > 0) {
+                logToFile("⚠️ Transaction from our wallet but NO DEX detected");
+                logToFile(`  First 5 programs: ${accountKeys.slice(0, 5).map(k => k.toBase58().substring(0, 8) + "...").join(', ')}`);
+            }
         }
     }
     catch (error) {
-        console.error('Error parsing transaction:', error);
+        logToFile(`❌ ERROR parsing transaction: ${error}`);
+        console.error('❌ Error parsing transaction:', error);
     }
 };
 async function handleStream(client, args) {
-    console.log('Stream connecting...');
+    logToFile('🌐 Stream connecting...');
     const stream = await client.subscribe();
-    console.log('Stream connected successfully');
+    logToFile('✅ Stream connected successfully');
     let lastDataTime = Date.now();
     let transactionCount = 0;
     const heartbeat = setInterval(() => {
         const timeSinceLastData = Date.now() - lastDataTime;
-        console.log(`Stream alive - last data: ${Math.floor(timeSinceLastData / 1000)}s ago`);
+        logToFile(`💓 Stream alive - last data: ${Math.floor(timeSinceLastData / 1000)}s ago, processed: ${transactionCount} txs`);
         if (timeSinceLastData > 300000) {
-            console.log('Stream seems dead, forcing reconnection...');
+            logToFile('⚠️ Stream dead - forcing reconnection...');
             clearInterval(heartbeat);
             stream.end();
         }
     }, 60000);
     const streamClosed = new Promise((resolve, reject) => {
         stream.on("error", (error) => {
-            console.log("Stream ERROR:", error);
+            logToFile(`❌ Stream ERROR: ${error}`);
             clearInterval(heartbeat);
             reject(error);
             stream.end();
         });
         stream.on("end", () => {
-            console.log("Stream ENDED");
+            logToFile("🔴 Stream ENDED");
             clearInterval(heartbeat);
             resolve();
         });
         stream.on("close", () => {
-            console.log("Stream CLOSED");
+            logToFile("🔴 Stream CLOSED");
             clearInterval(heartbeat);
             resolve();
         });
@@ -466,8 +509,8 @@ async function handleStream(client, args) {
     stream.on("data", (data) => {
         lastDataTime = Date.now();
         transactionCount++;
-        if (transactionCount % 100 === 0) {
-            console.log(`Processed ${transactionCount} transactions`);
+        if (transactionCount % 50 === 0) {
+            logToFile(`📊 Processed ${transactionCount} transactions`);
         }
         parseTransaction(data);
     });
@@ -481,7 +524,7 @@ async function handleStream(client, args) {
             }
         });
     }).catch((reason) => {
-        console.error(reason);
+        logToFile(`❌ Stream write error: ${reason}`);
         throw reason;
     });
     await streamClosed;
@@ -489,25 +532,25 @@ async function handleStream(client, args) {
 async function subscribeCommand(client, args) {
     while (true) {
         try {
-            console.log("Starting Substream server...");
+            logToFile("🚀 Starting Substream server...");
             await handleStream(client, args);
         }
         catch (error) {
-            console.error("Stream error, restarting in 1 second...", error);
+            logToFile(`❌ Stream error, restarting in 1 second... Error: ${error}`);
             await new Promise((resolve) => setTimeout(resolve, 1000));
         }
     }
 }
 const client = new yellowstone_grpc_1.default('https://grpc.eu.shyft.to', process.env.GRPC_TOKEN, undefined);
 const start = async () => {
-    console.log("================================");
-    console.log('TRACK-SWAP INITIALIZATION');
-    console.log("================================");
-    console.log('Telegram Bot Token:', process.env.ALERTS_BOT_TOKEN || process.env.BOT_TOKEN ? '✓' : '✗');
-    console.log('GRPC Token:', process.env.GRPC_TOKEN ? '✓' : '✗');
-    console.log('GRPC Endpoint: https://grpc.eu.shyft.to');
+    logToFile("================================");
+    logToFile('🚀 TRACK-SWAP INITIALIZATION');
+    logToFile("================================");
+    logToFile(`Telegram Bot Token: ${process.env.ALERTS_BOT_TOKEN || process.env.BOT_TOKEN ? '✓' : '✗'}`);
+    logToFile(`GRPC Token: ${process.env.GRPC_TOKEN ? '✓' : '✗'}`);
+    logToFile('GRPC Endpoint: https://grpc.eu.shyft.to');
     let detection_wallets = await (0, wallets_1.getWallets)();
-    console.log('Total wallets to track:', detection_wallets.length);
+    logToFile(`📊 Total wallets to track: ${detection_wallets.length}`);
     const testWallets = [
         'prED5Hv9jaZmKRw7NcENdUMu6Pw2NWBmN2DSAEbNP7Y',
         'pp2rgZ8Bshvc1XHCerHJH77fNA7AGQND8D9zfW2AeVb',
@@ -515,14 +558,14 @@ const start = async () => {
     ];
     for (let wallet of testWallets) {
         if (detection_wallets.includes(wallet)) {
-            console.log(`✓ ${wallet.substring(0, 8)}... è nella lista di tracking`);
+            logToFile(`✓ ${wallet.substring(0, 8)}... is in tracking list`);
         }
         else {
-            console.log(`✗ ${wallet.substring(0, 8)}... NON è nella lista di tracking`);
+            logToFile(`✗ ${wallet.substring(0, 8)}... NOT in tracking list`);
         }
     }
-    console.log("================================");
-    console.log("Starting gRPC stream subscription...");
+    logToFile("================================");
+    logToFile("🌐 Starting gRPC stream subscription...");
     const req = {
         accounts: {},
         slots: {},
@@ -544,7 +587,7 @@ const start = async () => {
         ping: undefined,
         commitment: yellowstone_grpc_1.CommitmentLevel.CONFIRMED,
     };
-    console.log("Subscription request created with", detection_wallets.length, "wallets");
+    logToFile(`📡 Subscription request created with ${detection_wallets.length} wallets`);
     subscribeCommand(client, req);
 };
 exports.start = start;

@@ -1766,3 +1766,49 @@
 2025-10-15T12:32:58: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
 2025-10-15T12:42:18: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
 2025-10-15T12:52:39: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-15T13:23:03: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-15T13:47:37: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-15T13:57:23: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-15T15:01:33: ERROR: Mint account not found in accounts
+2025-10-15T15:01:33: Available accounts: , , , , , , , , , , , , , 
+2025-10-15T15:01:33: Failed to parse Pumpfun transaction output
+2025-10-15T15:05:54: ERROR: Mint account not found in accounts
+2025-10-15T15:05:54: Available accounts: , , , , 
+2025-10-15T15:05:54: Failed to parse Pumpfun transaction output
+2025-10-15T15:38:00: ERROR: Mint account not found in accounts
+2025-10-15T15:38:00: Available accounts: , , , , , , , , , , , , , 
+2025-10-15T15:38:00: Failed to parse Pumpfun transaction output
+2025-10-15T15:41:18: ERROR: Mint account not found in accounts
+2025-10-15T15:41:18: Available accounts: , , , , 
+2025-10-15T15:41:18: Failed to parse Pumpfun transaction output
+2025-10-15T16:24:26: ERROR: Mint account not found in accounts
+2025-10-15T16:24:26: Available accounts: , , , , , , , , , , , , , 
+2025-10-15T16:24:26: Failed to parse Pumpfun transaction output
+2025-10-15T16:26:40: ERROR: Mint account not found in accounts
+2025-10-15T16:26:40: Available accounts: , , , , 
+2025-10-15T16:26:40: Failed to parse Pumpfun transaction output
+2025-10-15T16:27:23: ERROR: Mint account not found in accounts
+2025-10-15T16:27:23: Available accounts: , , , , 
+2025-10-15T16:27:23: Failed to parse Pumpfun transaction output
+2025-10-15T18:03:04: ERROR: Mint account not found in accounts
+2025-10-15T18:03:04: Available accounts: , , , , 
+2025-10-15T18:03:04: Failed to parse Pumpfun transaction output
+2025-10-15T20:33:35: ERROR: Mint account not found in accounts
+2025-10-15T20:33:35: Available accounts: , , , , 
+2025-10-15T20:33:35: Failed to parse Pumpfun transaction output
+2025-10-15T21:02:14: bigint: Failed to load bindings, pure JS will be used (try npm run rebuild?)
+2025-10-15T21:04:28: ERROR: Mint account not found in accounts
+2025-10-15T21:04:28: Available accounts: , , , , 
+2025-10-15T21:04:28: Failed to parse Pumpfun transaction output
+2025-10-15T21:13:52: ERROR: Mint account not found in accounts
+2025-10-15T21:13:52: Available accounts: , , , , 
+2025-10-15T21:13:52: Failed to parse Pumpfun transaction output
+2025-10-15T21:17:43: ERROR: Mint account not found in accounts
+2025-10-15T21:17:43: Available accounts: , , , , 
+2025-10-15T21:17:43: Failed to parse Pumpfun transaction output
+2025-10-15T21:46:30: ERROR: Mint account not found in accounts
+2025-10-15T21:46:30: Available accounts: , , , , , , , , , , , , , 
+2025-10-15T21:46:30: Failed to parse Pumpfun transaction output
+2025-10-15T21:53:15: ERROR: Mint account not found in accounts
+2025-10-15T21:53:15: Available accounts: , , , , 
+2025-10-15T21:53:15: Failed to parse Pumpfun transaction output

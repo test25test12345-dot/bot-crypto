@@ -44,9 +44,9 @@ const sendAlert = async (chatId: string, message: string) => {
             parse_mode: 'HTML', 
             disable_web_page_preview: true 
         });
-        console.log('✅ Alert sent to:', chatId);
+        logToFile('✅ Alert sent to: ' + chatId);
     } catch (error: any) {
-        console.error('❌ Failed to send to:', chatId, error.message);
+        logToFile('❌ Failed to send to: ' + chatId + ' - ' + error.message);
     }
 };
 
@@ -63,7 +63,7 @@ const logToFile = (message: string) => {
         const logMessage = `[${timestamp}] ${message}\n`;
         
         fs.appendFileSync(logFilePath, logMessage, 'utf8');
-        console.log(message); // Log anche su console
+        console.log(message);
     } catch (error) {
         console.error('Error writing to log file:', error);
     }
@@ -86,18 +86,24 @@ const TXN_FORMATTER = new TransactionFormatter();
 
 const checkDB_Alert = async (buyWallets: any, old: any, swapData: any) => {
     try {
-        logToFile(`🚨 checkDB_Alert chiamato con ${buyWallets.length} wallet`);
-        logToFile(`Token: ${swapData.outMint}`);
+        logToFile(`🚨 checkDB_Alert START - Token: ${swapData.outMint}`);
+        logToFile(`   Total wallets: ${buyWallets.length}`);
         
         const sellWallets: any = await buyWallets.filter((wallet: any) => wallet.type === "sell")
+        logToFile(`   Sell wallets: ${sellWallets.length}`);
+        
         const tokenMCap: string = await getTokenMcap(swapData)
+        logToFile(`   MCap: ${tokenMCap}`);
+        
         const tokenInfo: any = await getTokenInfo(swapData)
+        logToFile(`   Token name: ${tokenInfo.data?.name || 'N/A'}`);
+        
         const solPrice: any = await getTokenPrice_(swapData.inMint)
-        logToFile(`SOL Price: ${solPrice}, MCap: ${tokenMCap}`);
+        logToFile(`   SOL Price: ${solPrice}`);
         
         const extensions: any = tokenInfo.data?.extensions ?? null
         const positionTradeScore = await getTokenScore(buyWallets, swapData)
-        logToFile(`TradeScore: ${positionTradeScore}`);
+        logToFile(`   TradeScore: ${positionTradeScore}`);
 
         buyWallets.sort((a: any, b: any) => {
             if (a > b) {
@@ -156,71 +162,75 @@ const checkDB_Alert = async (buyWallets: any, old: any, swapData: any) => {
         await sendAlert('-1002359004329', message);
         await sendAlert('-1002444321759', message);
         
-        logToFile('✅ Alerts sent successfully');
+        logToFile('✅ checkDB_Alert COMPLETE');
     } catch (error) {
-        logToFile(`❌ Error in checkDB_Alert: ${error}`);
+        logToFile(`❌ ERROR in checkDB_Alert: ${error}`);
         console.error('❌ Error in checkDB_Alert:', error);
     }
 }
 
 const processSwapData = async (swap_data: any) => {
     try {
+        logToFile("========================================");
+        logToFile("📊 processSwapData CALLED");
+        
         if (!swap_data) {
-            logToFile("❌ processSwapData called with null data");
+            logToFile("❌ swap_data is NULL - returning");
             return
         }
         
-        logToFile("====== SWAP DATA RECEIVED ======");
-        logToFile(`Owner: ${swap_data.owner}`);
-        logToFile(`Type: ${swap_data.type}`);
-        logToFile(`inMint: ${swap_data.inMint}`);
-        logToFile(`outMint: ${swap_data.outMint}`);
-        logToFile(`inAmount: ${swap_data.inAmount}`);
-        logToFile(`outAmount: ${swap_data.outAmount}`);
-        logToFile(`Signature: ${swap_data.signature}`);
-        logToFile("================================");
+        logToFile(`✅ swap_data VALID`);
+        logToFile(`   Owner: ${swap_data.owner}`);
+        logToFile(`   Type: ${swap_data.type}`);
+        logToFile(`   inMint: ${swap_data.inMint}`);
+        logToFile(`   outMint: ${swap_data.outMint}`);
+        logToFile(`   inAmount: ${swap_data.inAmount}`);
+        logToFile(`   outAmount: ${swap_data.outAmount}`);
+        logToFile(`   Signature: ${swap_data.signature}`);
         
-        // FILTRO 1: Blacklist esplicita
+        // FILTRO 1: Blacklist
         if (BLACKLISTED_WALLETS.includes(swap_data.owner)) {
-            logToFile(`❌ BLACKLISTED WALLET - IGNORED: ${swap_data.owner}`);
+            logToFile(`❌ BLACKLISTED - ${swap_data.owner}`);
             return;
         }
         
-        // FILTRO 2: Whitelist - deve essere nella lista
+        // FILTRO 2: Whitelist
         const trackedWallet = wallets.find(w => w.address === swap_data.owner);
         if (!trackedWallet) {
-            logToFile(`❌ NOT IN WHITELIST - IGNORED: ${swap_data.owner}`);
+            logToFile(`❌ NOT IN WHITELIST - ${swap_data.owner}`);
             return;
         }
         
-        logToFile(`✅ VALID WALLET: ${trackedWallet.name} (${swap_data.owner.substring(0,8)}...)`);
+        logToFile(`✅ WALLET OK: ${trackedWallet.name}`);
 
         let db_wallet: any = await database.selectTrackWallet({ wallet: swap_data.owner })
         if (!db_wallet) {
-            logToFile("⚠️ Wallet non trovato nel database, creazione in corso...");
+            logToFile("⚠️ Wallet NOT in DB - creating...");
             await database.updateTrackWallet({ 
                 wallet: swap_data.owner, 
                 tokens: [], 
                 name: trackedWallet.name 
             });
             db_wallet = await database.selectTrackWallet({ wallet: swap_data.owner });
-            logToFile("✅ Wallet creato nel database");
+            logToFile("✅ Wallet created in DB");
+        } else {
+            logToFile(`✅ Wallet found in DB: ${db_wallet.name}`);
         }
         
         if (swap_data.inMint === WSOL_ADDRESS) {
-            // BUY logic
+            // === BUY LOGIC ===
             if (swap_data.outMint === USDC_ADDRESS || swap_data.outMint === USDT_ADDRESS) {
-                logToFile("⏭️ Skip: stablecoin swap");
+                logToFile("⭕ Skip: stablecoin swap");
                 return
             }
             
-            logToFile(`💚 BUY: ${trackedWallet.name} sta comprando ${swap_data.outMint.substring(0,8)}...`);
+            logToFile(`💚 BUY DETECTED: ${trackedWallet.name} -> ${swap_data.outMint.substring(0,8)}...`);
             
             const buytxTime = new Date();
 
             let token_index = db_wallet.tokens.findIndex((mint: any) => mint.mint === swap_data.outMint)
             if (token_index < 0) {
-                logToFile("➕ Nuovo token per questo wallet");
+                logToFile("➕ New token for this wallet");
                 db_wallet.tokens.push({
                     mint: swap_data.outMint, 
                     type: "buy", 
@@ -236,7 +246,7 @@ const processSwapData = async (swap_data: any) => {
                     inAmount: swap_data.inAmount
                 })
             } else {
-                logToFile("🔄 Token già esistente, aggiornamento");
+                logToFile("🔄 Existing token - updating");
                 db_wallet.tokens[token_index].type = "buy"
                 db_wallet.tokens[token_index].txTime = buytxTime.toLocaleString('en-US', {
                     hour12: false,
@@ -251,10 +261,10 @@ const processSwapData = async (swap_data: any) => {
             }
 
             await database.updateTrackWallet({ wallet: swap_data.owner, tokens: db_wallet.tokens, name: db_wallet.name })
-            logToFile("✅ Database wallet aggiornato");
+            logToFile("✅ Wallet updated in DB");
 
             const buyPosition: any = await database.selectTrackPosition({ token: swap_data.outMint })
-            logToFile(`Position esistente per ${swap_data.outMint.substring(0,8)}...? ${buyPosition ? "SI" : "NO"}`);
+            logToFile(`Position check: ${buyPosition ? "EXISTS" : "NEW"}`);
 
             let openPosition: Boolean = false
             if (buyPosition && buyPosition.token) {
@@ -262,7 +272,7 @@ const processSwapData = async (swap_data: any) => {
                 let wallet_index: any = buyPosition.wallets.findIndex((wallet: any) => wallet.address === swap_data.owner)
                 
                 if (wallet_index < 0) {
-                    logToFile("➕ Aggiunta wallet alla posizione");
+                    logToFile("➕ Adding wallet to position");
                     buyPosition.wallets.push({
                         address: swap_data.owner, 
                         type: "buy", 
@@ -280,7 +290,7 @@ const processSwapData = async (swap_data: any) => {
                     })
                 }
                 else {
-                    logToFile("🔄 Aggiornamento wallet nella posizione");
+                    logToFile("🔄 Updating wallet in position");
                     buyPosition.wallets[wallet_index].type = "buy"
                     buyPosition.wallets[wallet_index].inAmount = swap_data.inAmount
                     buyPosition.wallets[wallet_index].txTime = buytxTime.toLocaleString('en-US', {
@@ -301,24 +311,24 @@ const processSwapData = async (swap_data: any) => {
                 logToFile(`📊 Buyers: OLD=${buysInPosition_old.length} NEW=${buysInPosition.length}`);
 
                 if (buysInPosition && buysInPosition.length >= 3 && buysInPosition_old?.length != buysInPosition.length) {
-                    logToFile(`🚨🚨🚨 ALERT TRIGGERED: ${buysInPosition.length} wallet hanno comprato ${swap_data.outMint}`);
+                    logToFile(`🚨🚨🚨 ALERT TRIGGER: ${buysInPosition.length} buyers found!`);
                     await checkDB_Alert(buyPosition.wallets, buyPosition?.old, swap_data)
                 }
                 else if (buysInPosition.length < 3) {
-                    logToFile(`⏭️ Meno di 3 buyer (${buysInPosition.length}), rimuovo posizione`);
+                    logToFile(`⭕ Less than 3 buyers (${buysInPosition.length}), removing position`);
                     await database.removeTrackPosition({ token: swap_data.outMint })
                     openPosition = false
                 } else {
-                    logToFile(`⏭️ Alert già inviato (old=${buysInPosition_old.length}, new=${buysInPosition.length})`);
+                    logToFile(`⭕ Alert already sent (old=${buysInPosition_old.length}, new=${buysInPosition.length})`);
                 }
             }
 
             if (!openPosition) {
-                logToFile("🔍 Nessuna posizione aperta, controllo tutti i wallet...");
+                logToFile("🔍 No open position - checking all wallets...");
                 let buycount = 0
                 let buyWallets: any = []
                 const trackWallets: any = await database.selectTrackWallets({})
-                logToFile(`📊 Controllo ${trackWallets.length} wallet totali nel database`);
+                logToFile(`📊 Checking ${trackWallets.length} total wallets in DB`);
                 
                 for (const wallet of trackWallets) {
                     for (const token of wallet.tokens) {
@@ -331,29 +341,29 @@ const processSwapData = async (swap_data: any) => {
                                 inAmount: token.inAmount, 
                                 txTime: token.txTime 
                             })
-                            logToFile(`  ✓ ${wallet.name} ha ${swap_data.outMint.substring(0,8)}...`);
+                            logToFile(`  ✓ ${wallet.name} has this token`);
                         }
                     }
                 }
 
-                logToFile(`📊 Trovati ${buycount} wallet con questo token`);
+                logToFile(`📊 Found ${buycount} wallets with this token`);
 
                 if (buycount >= 3 && buyWallets.length >= 3) {
-                    logToFile(`🚨🚨🚨 NEW POSITION ALERT: ${buyWallets.length} wallet hanno comprato ${swap_data.outMint}`);
+                    logToFile(`🚨🚨🚨 NEW POSITION ALERT: ${buyWallets.length} buyers!`);
                     await database.updateTrackPosition({ token: swap_data.outMint, wallets: buyWallets, old: false })
                     await checkDB_Alert(buyWallets, false, swap_data)
                 } else {
-                    logToFile(`⏭️ Solo ${buycount} wallet hanno questo token, serve almeno 3 per alert`);
+                    logToFile(`⭕ Only ${buycount} wallets, need 3 for alert`);
                 }
             }
         } else {
-            // SELL logic
+            // === SELL LOGIC ===
             if (swap_data.inMint === USDC_ADDRESS || swap_data.inMint === USDT_ADDRESS) {
-                logToFile("⏭️ Skip: stablecoin sell");
+                logToFile("⭕ Skip: stablecoin sell");
                 return
             }
             
-            logToFile(`🔴 SELL: ${trackedWallet.name} sta vendendo token ${swap_data.inMint.substring(0,8)}...`);
+            logToFile(`🔴 SELL DETECTED: ${trackedWallet.name} -> ${swap_data.inMint.substring(0,8)}...`);
             
             let solPrice: any = await getTokenPrice_(WSOL_ADDRESS)
 
@@ -367,10 +377,10 @@ const processSwapData = async (swap_data: any) => {
                     if (Number(db_wallet.tokens[token_index].inAmount) < 0) db_wallet.tokens[token_index].inAmount = 0
                     await database.updateTrackWallet({ wallet: swap_data.owner, tokens: db_wallet.tokens, name: db_wallet.name })
                     sellAvailable = true
-                    logToFile("✅ Sell registrato");
+                    logToFile("✅ Sell registered");
                 }
             } else {
-                logToFile("⚠️ Token non trovato nel wallet per sell");
+                logToFile("⚠️ Token not found in wallet for sell");
             }
 
             if (sellAvailable) {
@@ -392,8 +402,10 @@ const processSwapData = async (swap_data: any) => {
 
             await delayForTrxSync(swap_data.signature)
         }
+        
+        logToFile("========================================");
     } catch (error) {
-        logToFile(`❌ Error in processSwapData: ${error}`);
+        logToFile(`❌ ERROR in processSwapData: ${error}`);
         console.error('❌ Error in processSwapData:', error);
     }
 }
@@ -409,10 +421,8 @@ const parseTransaction = async (data: any) => {
             const accountKeys = txn.transaction.message.staticAccountKeys
             const signature = txn.transaction.signatures[0];
             
-            // Log TUTTI gli account coinvolti nella transazione
             const involvedAccounts = accountKeys.map((key: PublicKey) => key.toBase58());
             
-            // Verifica quali dei nostri wallet sono coinvolti
             const ourWallets = involvedAccounts.filter((acc: string) => 
                 wallets.some(w => w.address === acc)
             );
@@ -429,17 +439,13 @@ const parseTransaction = async (data: any) => {
                 try {
                     const ret = await getJupiterSwapInfo(txn)
                     if (ret) {
-                        logToFile(`✅ Jupiter swap decoded successfully`);
-                        logToFile(`   Owner: ${ret.owner}`);
-                        logToFile(`   Type: ${ret.type}`);
-                        logToFile(`   inMint: ${ret.inMint}`);
-                        logToFile(`   outMint: ${ret.outMint}`);
+                        logToFile(`✅ Jupiter decode OK - proceeding to processSwapData`);
                         await processSwapData(ret)
                     } else {
-                        logToFile("❌ Jupiter swap decode returned null");
+                        logToFile("❌ Jupiter decode returned NULL");
                     }
                 } catch (error) {
-                    logToFile(`❌ Jupiter decode error: ${error}`);
+                    logToFile(`❌ Jupiter decode ERROR: ${error}`);
                 }
                 return
             }
@@ -454,17 +460,13 @@ const parseTransaction = async (data: any) => {
                     const txn = TXN_FORMATTER.formTransactionFromJson(data.transaction, Date.now());
                     const ret = await decodeRaydiumCpmmTxn(txn)
                     if (ret) {
-                        logToFile(`✅ Raydium CPMM swap decoded successfully`);
-                        logToFile(`   Owner: ${ret.owner}`);
-                        logToFile(`   Type: ${ret.type}`);
-                        logToFile(`   inMint: ${ret.inMint}`);
-                        logToFile(`   outMint: ${ret.outMint}`);
+                        logToFile(`✅ Raydium CPMM decode OK - proceeding to processSwapData`);
                         await processSwapData(ret)
                     } else {
-                        logToFile("❌ Raydium CPMM swap decode returned null");
+                        logToFile("❌ Raydium CPMM decode returned NULL");
                     }
                 } catch (error) {
-                    logToFile(`❌ Raydium CPMM decode error: ${error}`);
+                    logToFile(`❌ Raydium CPMM decode ERROR: ${error}`);
                 }
                 return
             }
@@ -472,22 +474,18 @@ const parseTransaction = async (data: any) => {
             // Raydium
             const hasRaydium = accountKeys.find((programId: PublicKey) => programId.equals(RayLiqPoolv4))
             if (hasRaydium) {
-                logToFile("🟢 Raydium transaction detected");
+                logToFile("�� Raydium transaction detected");
                 try {
                     const txn = TXN_FORMATTER.formTransactionFromJson(data.transaction, Date.now());
                     const ret = await decodeRaydiumTxn(txn)
                     if (ret) {
-                        logToFile(`✅ Raydium swap decoded successfully`);
-                        logToFile(`   Owner: ${ret.owner}`);
-                        logToFile(`   Type: ${ret.type}`);
-                        logToFile(`   inMint: ${ret.inMint}`);
-                        logToFile(`   outMint: ${ret.outMint}`);
+                        logToFile(`✅ Raydium decode OK - proceeding to processSwapData`);
                         await processSwapData(ret)
                     } else {
-                        logToFile("❌ Raydium swap decode returned null");
+                        logToFile("❌ Raydium decode returned NULL");
                     }
                 } catch (error) {
-                    logToFile(`❌ Raydium decode error: ${error}`);
+                    logToFile(`❌ Raydium decode ERROR: ${error}`);
                 }
                 return
             }
@@ -499,29 +497,28 @@ const parseTransaction = async (data: any) => {
                 try {
                     const ret = await decodePumpfunTxn(txn)
                     if (ret) {
-                        logToFile(`✅ PumpFun swap decoded successfully`);
+                        logToFile(`✅ PumpFun decode OK - proceeding to processSwapData`);
                         logToFile(`   Owner: ${ret.owner}`);
                         logToFile(`   Type: ${ret.type}`);
                         logToFile(`   inMint: ${ret.inMint}`);
                         logToFile(`   outMint: ${ret.outMint}`);
                         await processSwapData(ret)
                     } else {
-                        logToFile("❌ PumpFun swap decode returned null");
+                        logToFile("❌ PumpFun decode returned NULL");
                     }
                 } catch (error) {
-                    logToFile(`❌ PumpFun decode error: ${error}`);
+                    logToFile(`❌ PumpFun decode ERROR: ${error}`);
                 }
                 return
             }
             
-            // Se nessun DEX è stato rilevato ma è una transazione dei nostri wallet
             if (ourWallets.length > 0) {
                 logToFile("⚠️ Transaction from our wallet but NO DEX detected");
-                logToFile(`  First 5 programs in transaction: ${accountKeys.slice(0,5).map(k => k.toBase58().substring(0,8) + "...").join(', ')}`);
+                logToFile(`  First 5 programs: ${accountKeys.slice(0,5).map(k => k.toBase58().substring(0,8) + "...").join(', ')}`);
             }
         }
     } catch (error) {
-        logToFile(`❌ Error parsing transaction: ${error}`);
+        logToFile(`❌ ERROR parsing transaction: ${error}`);
         console.error('❌ Error parsing transaction:', error);
     }
 }
@@ -536,10 +533,10 @@ async function handleStream(client: Client, args: SubscribeRequest) {
     
     const heartbeat = setInterval(() => {
         const timeSinceLastData = Date.now() - lastDataTime;
-        logToFile(`💓 Stream alive - last data: ${Math.floor(timeSinceLastData / 1000)}s ago, processed: ${transactionCount} transactions`);
+        logToFile(`💓 Stream alive - last data: ${Math.floor(timeSinceLastData / 1000)}s ago, processed: ${transactionCount} txs`);
         
         if (timeSinceLastData > 300000) {
-            logToFile('⚠️ Stream seems dead, forcing reconnection...');
+            logToFile('⚠️ Stream dead - forcing reconnection...');
             clearInterval(heartbeat);
             stream.end();
         }
@@ -607,25 +604,24 @@ export const start = async () => {
     logToFile("================================");
     logToFile('🚀 TRACK-SWAP INITIALIZATION');
     logToFile("================================");
-    logToFile(`Telegram Bot Token: ${process.env.ALERTS_BOT_TOKEN || process.env.BOT_TOKEN ? '✔' : '✗'}`);
-    logToFile(`GRPC Token: ${process.env.GRPC_TOKEN ? '✔' : '✗'}`);
+    logToFile(`Telegram Bot Token: ${process.env.ALERTS_BOT_TOKEN || process.env.BOT_TOKEN ? '✓' : '✗'}`);
+    logToFile(`GRPC Token: ${process.env.GRPC_TOKEN ? '✓' : '✗'}`);
     logToFile('GRPC Endpoint: https://grpc.eu.shyft.to');
     
     let detection_wallets: string[] = await getWallets()
     logToFile(`📊 Total wallets to track: ${detection_wallets.length}`);
     
-    // Verifica specifici wallet
     const testWallets = [
-        'prED5Hv9jaZmKRw7NcENdUMu6Pw2NWBmN2DSAEbNP7Y', // pooh1
-        'pp2rgZ8Bshvc1XHCerHJH77fNA7AGQND8D9zfW2AeVb', // pooh2
-        '4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf' // wallet problematico
+        'prED5Hv9jaZmKRw7NcENdUMu6Pw2NWBmN2DSAEbNP7Y',
+        'pp2rgZ8Bshvc1XHCerHJH77fNA7AGQND8D9zfW2AeVb',
+        '4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf'
     ];
     
     for (let wallet of testWallets) {
         if (detection_wallets.includes(wallet)) {
-            logToFile(`✔ ${wallet.substring(0,8)}... è nella lista di tracking`);
+            logToFile(`✓ ${wallet.substring(0,8)}... is in tracking list`);
         } else {
-            logToFile(`✗ ${wallet.substring(0,8)}... NON è nella lista di tracking`);
+            logToFile(`✗ ${wallet.substring(0,8)}... NOT in tracking list`);
         }
     }
     
