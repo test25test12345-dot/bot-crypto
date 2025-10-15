@@ -116,51 +116,52 @@ const checkDB_Alert = async (buyWallets: any, old: any, swapData: any) => {
 
         let message = '';
         
-        message = message + '\n\u{1F4B8} <b>New smart holder entry</b>\n';
-        message = message + '\n\u{1F50E} <b>Address</b>: <code>' + swapData.outMint + '</code>';
-        message = message + '\n\u{1F4B0} <b>Name</b>: ' + (tokenInfo.data?.name ?? " ");
-        message = message + '\n\u{1F4C8} <b>MCap</b>: ' + tokenMCap;
+        message = message + '\n💸 <b>New smart holder entry</b>\n';
+        message = message + '\n🔎 <b>Address</b>: <code>' + swapData.outMint + '</code>';
+        message = message + '\n💰 <b>Name</b>: ' + (tokenInfo.data?.name ?? " ");
+        message = message + '\n📈 <b>MCap</b>: ' + tokenMCap;
 
         if (extensions && extensions.website) {
-            message = message + '\n\u{1F517} <a href="' + extensions.website + '">Website</a>';
+            message = message + '\n🔗 <a href="' + extensions.website + '">Website</a>';
         }
         if (extensions && extensions.twitter) {
-            message = message + '\n\u{1F517} <a href="' + extensions.twitter + '">Twitter</a>';
+            message = message + '\n🔗 <a href="' + extensions.twitter + '">Twitter</a>';
         }
         if (extensions && extensions.telegram) {
-            message = message + '\n\u{1F517} <a href="' + extensions.telegram + '">Telegram</a>';
+            message = message + '\n🔗 <a href="' + extensions.telegram + '">Telegram</a>';
         }
         if (extensions && extensions.discord) {
-            message = message + '\n\u{1F517} <a href="' + extensions.discord + '">Discord</a>';
+            message = message + '\n🔗 <a href="' + extensions.discord + '">Discord</a>';
         }
 
-        message = message + '\n\n\u{1F4AF} <b>TradeScore</b>: ' + positionTradeScore;
-        message = message + '\n\n\u{1F99A} <b>' + (buyWallets.length - sellWallets.length) + ' smart holders</b>';
+        message = message + '\n\n💯 <b>TradeScore</b>: ' + positionTradeScore;
+        message = message + '\n\n🦚 <b>' + (buyWallets.length - sellWallets.length) + ' smart holders</b>';
         
         for (let i = 0; i < buyWallets.length; i++) {
             if (buyWallets[i].type === "buy") {
                 const amount = (buyWallets[i].inAmount / Math.pow(10, 9) * solPrice).toFixed(0);
-                message = message + '\n\u{1F7E2} ' + buyWallets[i].name + '  ($' + amount + ') (' + buyWallets[i].txTime + ')';
+                message = message + '\n🟢 ' + buyWallets[i].name + '  ($' + amount + ') (' + buyWallets[i].txTime + ')';
             }
         }
 
-        message = message + '\n\n\u{2757} <b>' + sellWallets.length + ' close</b>';
+        message = message + '\n\n❗ <b>' + sellWallets.length + ' close</b>';
         
         for (let i = 0; i < buyWallets.length; i++) {
             if (buyWallets[i].type === "sell") {
-                message = message + '\n\u{1F534} ' + buyWallets[i].name;
+                message = message + '\n🔴 ' + buyWallets[i].name;
             }
         }
 
-        message = message + '\n\n\u{26A1} <a href="https://jup.ag/swap/' + swapData.outMint + '-SOL">Jupiter</a>';
-        message = message + '\n\u{1F438} <a href="https://gmgn.ai/sol/token/' + swapData.outMint + '">Gmgn</a>';
-        message = message + '\n\u{1F680} <a href="https://photon-sol.tinyastro.io/en/lp/' + swapData.outMint + '">Photon</a>';
-        message = message + '\n\u{1F402} <a href="https://neo.bullx.io/terminal?chainId=1399811149&address=' + swapData.outMint + '">Bullx</a>';
+        message = message + '\n\n⚡ <a href="https://jup.ag/swap/' + swapData.outMint + '-SOL">Jupiter</a>';
+        message = message + '\n🐸 <a href="https://gmgn.ai/sol/token/' + swapData.outMint + '">Gmgn</a>';
+        message = message + '\n🚀 <a href="https://photon-sol.tinyastro.io/en/lp/' + swapData.outMint + '">Photon</a>';
+        message = message + '\n🐂 <a href="https://neo.bullx.io/terminal?chainId=1399811149&address=' + swapData.outMint + '">Bullx</a>';
 
         logToFile('📤 Preparing to send alerts...');
         
-        await sendAlert('-1002359004329', message);
-        await sendAlert('-1002444321759', message);
+        await sendAlert(process.env.GROUP_CHATID || '', message);
+        await sendAlert(process.env.GROUP_CHATID1 || '', message);
+        await sendAlert(process.env.GROUP_CHATID2 || '', message);
         
         logToFile('✅ checkDB_Alert COMPLETE');
     } catch (error) {
@@ -187,6 +188,12 @@ const processSwapData = async (swap_data: any) => {
         logToFile(`   inAmount: ${swap_data.inAmount}`);
         logToFile(`   outAmount: ${swap_data.outAmount}`);
         logToFile(`   Signature: ${swap_data.signature}`);
+        
+        // FILTRO 0: Check se inMint e outMint sono uguali (swap invalido)
+        if (swap_data.inMint === swap_data.outMint) {
+            logToFile(`❌ INVALID SWAP - Same token: ${swap_data.inMint}`);
+            return;
+        }
         
         // FILTRO 1: Blacklist
         if (BLACKLISTED_WALLETS.includes(swap_data.owner)) {
@@ -219,8 +226,10 @@ const processSwapData = async (swap_data: any) => {
         
         if (swap_data.inMint === WSOL_ADDRESS) {
             // === BUY LOGIC ===
+            
+            // FILTRO 3: Skip se outMint è stablecoin
             if (swap_data.outMint === USDC_ADDRESS || swap_data.outMint === USDT_ADDRESS) {
-                logToFile("⭕ Skip: stablecoin swap");
+                logToFile("⭕ Skip: buying stablecoin");
                 return
             }
             
@@ -271,6 +280,9 @@ const processSwapData = async (swap_data: any) => {
                 openPosition = true
                 let wallet_index: any = buyPosition.wallets.findIndex((wallet: any) => wallet.address === swap_data.owner)
                 
+                const buysBefore = buyPosition.wallets.filter((w: any) => w.type === "buy").length;
+                logToFile(`📊 Buyers BEFORE update: ${buysBefore}`);
+                
                 if (wallet_index < 0) {
                     logToFile("➕ Adding wallet to position");
                     buyPosition.wallets.push({
@@ -304,22 +316,22 @@ const processSwapData = async (swap_data: any) => {
                     })
                 }
 
-                const buysInPosition_old: any = buyPosition.wallets.filter((wallet: any) => wallet.type === "buy")
                 await database.updateTrackPosition({ token: swap_data.outMint, wallets: buyPosition.wallets, old: true })
-                const buysInPosition: any = buyPosition.wallets.filter((wallet: any) => wallet.type === "buy")
+                const buysAfter = buyPosition.wallets.filter((wallet: any) => wallet.type === "buy").length;
 
-                logToFile(`📊 Buyers: OLD=${buysInPosition_old.length} NEW=${buysInPosition.length}`);
+                logToFile(`📊 Buyers AFTER update: ${buysAfter}`);
 
-                if (buysInPosition && buysInPosition.length >= 3 && buysInPosition_old?.length != buysInPosition.length) {
-                    logToFile(`🚨🚨🚨 ALERT TRIGGER: ${buysInPosition.length} buyers found!`);
+                // INVIO ALERT se >= 3 buyer E il numero è aumentato
+                if (buysAfter >= 3 && buysAfter > buysBefore) {
+                    logToFile(`🚨🚨🚨 ALERT TRIGGER: ${buysAfter} buyers (was ${buysBefore})!`);
                     await checkDB_Alert(buyPosition.wallets, buyPosition?.old, swap_data)
                 }
-                else if (buysInPosition.length < 3) {
-                    logToFile(`⭕ Less than 3 buyers (${buysInPosition.length}), removing position`);
+                else if (buysAfter < 3) {
+                    logToFile(`⭕ Less than 3 buyers (${buysAfter}), removing position`);
                     await database.removeTrackPosition({ token: swap_data.outMint })
                     openPosition = false
                 } else {
-                    logToFile(`⭕ Alert already sent (old=${buysInPosition_old.length}, new=${buysInPosition.length})`);
+                    logToFile(`⭕ No new buyer (before=${buysBefore}, after=${buysAfter})`);
                 }
             }
 
@@ -358,8 +370,10 @@ const processSwapData = async (swap_data: any) => {
             }
         } else {
             // === SELL LOGIC ===
+            
+            // FILTRO 4: Skip se inMint è stablecoin
             if (swap_data.inMint === USDC_ADDRESS || swap_data.inMint === USDT_ADDRESS) {
-                logToFile("⭕ Skip: stablecoin sell");
+                logToFile("⭕ Skip: selling to stablecoin");
                 return
             }
             
@@ -371,13 +385,16 @@ const processSwapData = async (swap_data: any) => {
             let sellAvailable = false;
 
             if (token_index >= 0) {
+                // Check if rimane meno di $60 dopo la sell
                 if ((Number(db_wallet.tokens[token_index].inAmount) - Number(swap_data.outAmount)) / 10 ** 9 * solPrice < 60) {
                     db_wallet.tokens[token_index].type = "sell"
                     db_wallet.tokens[token_index].inAmount = Number(db_wallet.tokens[token_index].inAmount) - Number(swap_data.inAmount)
                     if (Number(db_wallet.tokens[token_index].inAmount) < 0) db_wallet.tokens[token_index].inAmount = 0
                     await database.updateTrackWallet({ wallet: swap_data.owner, tokens: db_wallet.tokens, name: db_wallet.name })
                     sellAvailable = true
-                    logToFile("✅ Sell registered");
+                    logToFile("✅ Sell registered (position < $60)");
+                } else {
+                    logToFile("⭕ Partial sell - position still > $60");
                 }
             } else {
                 logToFile("⚠️ Token not found in wallet for sell");
@@ -395,6 +412,8 @@ const processSwapData = async (swap_data: any) => {
                         if (buysInPosition.length >= 3) {
                             logToFile("🚨 SELL ALERT");
                             await checkDB_Alert(sellPosition.wallets, true, swap_data)
+                        } else {
+                            logToFile(`⭕ Position now has only ${buysInPosition.length} buyers - no alert`);
                         }
                     }
                 }
@@ -474,7 +493,7 @@ const parseTransaction = async (data: any) => {
             // Raydium
             const hasRaydium = accountKeys.find((programId: PublicKey) => programId.equals(RayLiqPoolv4))
             if (hasRaydium) {
-                logToFile("�� Raydium transaction detected");
+                logToFile("🟢 Raydium transaction detected");
                 try {
                     const txn = TXN_FORMATTER.formTransactionFromJson(data.transaction, Date.now());
                     const ret = await decodeRaydiumTxn(txn)
@@ -498,10 +517,6 @@ const parseTransaction = async (data: any) => {
                     const ret = await decodePumpfunTxn(txn)
                     if (ret) {
                         logToFile(`✅ PumpFun decode OK - proceeding to processSwapData`);
-                        logToFile(`   Owner: ${ret.owner}`);
-                        logToFile(`   Type: ${ret.type}`);
-                        logToFile(`   inMint: ${ret.inMint}`);
-                        logToFile(`   outMint: ${ret.outMint}`);
                         await processSwapData(ret)
                     } else {
                         logToFile("❌ PumpFun decode returned NULL");
