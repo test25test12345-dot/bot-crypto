@@ -37,6 +37,31 @@ const BLACKLISTED_WALLETS = [
     '4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf'
 ];
 
+// SOGLIA PER ALERT
+const ALERT_THRESHOLD = 3;
+
+// Wallet specifici da monitorare con log extra
+const DEBUG_WALLETS = {
+    'Assassin.eth': '6LChaYRYtEYjLEHhzo4HdEmgNwu2aia8CM8VhR9wn6n7',
+    'Doc': 'DYAn4XpAkN5mhiXkRB7dGq4Jadnx6XYgu8L5b3WGhbrt',
+    'GigaBrain': '3h65MmPZksoKKyEpEjnWU2Yk2iYT5oZDNitGy5cTaxoE',
+    'Gake': 'DNfuF1L6rmSpeXJQmVvw9n2LdPUuuRdDiNBpyMqVha41'
+};
+
+// Statistiche per debugging
+let dexStats = {
+    jupiter: 0,
+    raydium: 0,
+    pumpfun: 0,
+    cpmm: 0,
+    universal: 0,
+    unknown: 0,
+    total: 0,
+    ourWalletTxs: 0,
+    swapsProcessed: 0,
+    missedSwaps: 0
+};
+
 const sendAlert = async (chatId: string, message: string) => {
     try {
         const utf8Message = Buffer.from(message, 'utf8').toString('utf8');
@@ -84,6 +109,231 @@ interface SubscribeRequest {
 
 const TXN_FORMATTER = new TransactionFormatter();
 
+// Funzione helper per trovare i nostri wallet in una transazione
+function findOurWalletsInTransaction(accountKeys: PublicKey[]): {address: string, wallet: any, position: number}[] {
+    const results = [];
+    const accounts = accountKeys.map(k => k.toBase58());
+    
+    for (let i = 0; i < accounts.length; i++) {
+        const wallet = wallets.find(w => w.address === accounts[i]);
+        if (wallet) {
+            results.push({
+                address: accounts[i],
+                wallet: wallet,
+                position: i
+            });
+        }
+    }
+    
+    return results;
+}
+
+// Decoder universale POTENZIATO - cattura TUTTI gli swap
+async function decodeUniversalSwap(tx: VersionedTransactionResponse): Promise<any[]> {
+    const swaps = [];
+    
+    try {
+        if (!tx.meta || tx.meta?.err) return swaps;
+        
+        const accountKeys = tx.version === 0 ? 
+            tx.transaction.message.staticAccountKeys : 
+            (tx.transaction.message as Message).accountKeys;
+        
+        // Trova TUTTI i nostri wallet nella transazione
+        const ourWallets = findOurWalletsInTransaction(accountKeys);
+        if (ourWallets.length === 0) {
+            return swaps;
+        }
+        
+        const preBalances = tx.meta.preTokenBalances || [];
+        const postBalances = tx.meta.postTokenBalances || [];
+        
+        // Per ogni nostro wallet, cerca cambiamenti
+        for (const ourWallet of ourWallets) {
+            const owner = ourWallet.address;
+            const walletInfo = ourWallet.wallet;
+            
+            const debugName = Object.keys(DEBUG_WALLETS).find(name => 
+                DEBUG_WALLETS[name as keyof typeof DEBUG_WALLETS] === owner
+            );
+            
+            // Metodo 1: Analizza token balance diretti
+            const tokenChanges: any[] = [];
+            
+            // Cerca nei balance POST per account che appartengono al nostro wallet
+            for (const post of postBalances) {
+                // Check se questo token account appartiene al nostro wallet
+                // Il owner potrebbe essere il nostro wallet O potrebbe essere un account derivato
+                const isOurAccount = post.owner === owner || 
+                    (post.accountIndex < accountKeys.length && accountKeys[post.accountIndex].toBase58() === owner);
+                
+                if (!isOurAccount) continue;
+                
+                const pre = preBalances.find(p => 
+                    p.accountIndex === post.accountIndex && 
+                    p.mint === post.mint
+                );
+                
+                if (pre) {
+                    const change = Number(post.uiTokenAmount.amount) - Number(pre.uiTokenAmount.amount);
+                    if (Math.abs(change) > 0) {
+                        tokenChanges.push({
+                            mint: post.mint,
+                            change: change,
+                            isIncrease: change > 0,
+                            decimals: post.uiTokenAmount.decimals
+                        });
+                    }
+                } else if (Number(post.uiTokenAmount.amount) > 0) {
+                    // Nuovo token
+                    tokenChanges.push({
+                        mint: post.mint,
+                        change: Number(post.uiTokenAmount.amount),
+                        isIncrease: true,
+                        decimals: post.uiTokenAmount.decimals
+                    });
+                }
+            }
+            
+            // Check per token che erano in pre ma non in post (vendita completa)
+            for (const pre of preBalances) {
+                const isOurAccount = pre.owner === owner || 
+                    (pre.accountIndex < accountKeys.length && accountKeys[pre.accountIndex].toBase58() === owner);
+                
+                if (!isOurAccount) continue;
+                
+                const post = postBalances.find(p => 
+                    p.accountIndex === pre.accountIndex && 
+                    p.mint === pre.mint
+                );
+                
+                if (!post && Number(pre.uiTokenAmount.amount) > 0) {
+                    tokenChanges.push({
+                        mint: pre.mint,
+                        change: -Number(pre.uiTokenAmount.amount),
+                        isIncrease: false,
+                        decimals: pre.uiTokenAmount.decimals
+                    });
+                }
+            }
+            
+            // Metodo 2: Check anche gli account che il wallet potrebbe controllare
+            // PumpFun e altri DEX potrebbero usare PDA (Program Derived Addresses)
+            if (tokenChanges.length === 0) {
+                // Cerca pattern più ampi
+                for (let i = 0; i < postBalances.length; i++) {
+                    const post = postBalances[i];
+                    const pre = preBalances.find(p => p.accountIndex === post.accountIndex);
+                    
+                    // Se c'è un cambiamento significativo
+                    if (pre && post) {
+                        const change = Number(post.uiTokenAmount.amount) - Number(pre.uiTokenAmount.amount);
+                        if (Math.abs(change) > 0) {
+                            // Check se questo potrebbe essere collegato al nostro wallet
+                            // guardando le istruzioni della transazione
+                            const mightBeOurs = accountKeys.slice(0, 20).some(k => k.toBase58() === owner);
+                            
+                            if (mightBeOurs) {
+                                if (debugName) {
+                                    logToFile(`   🔍 Potential token change for ${debugName}: ${post.mint.substring(0,8)}...`);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Check SOL change
+            let solChange = 0;
+            if (ourWallet.position < tx.meta.postBalances.length && 
+                ourWallet.position < tx.meta.preBalances.length) {
+                solChange = tx.meta.postBalances[ourWallet.position] - tx.meta.preBalances[ourWallet.position];
+                
+                // Se è il fee payer, aggiungi le fee
+                if (ourWallet.position === 0) {
+                    solChange += (tx.meta.fee || 0);
+                }
+            }
+            
+            // Skip se SOL change troppo grande
+            if (Math.abs(solChange) > 1000 * 10**9) {
+                continue;
+            }
+            
+            // Log dettagliato per debug wallet
+            if (debugName && (tokenChanges.length > 0 || Math.abs(solChange) > 100000)) {
+                logToFile(`   🔍 ${debugName} Universal Analysis:`);
+                logToFile(`      Token changes: ${tokenChanges.length}`);
+                logToFile(`      SOL change: ${(solChange/10**9).toFixed(4)} SOL`);
+                for (const tc of tokenChanges) {
+                    logToFile(`      Token: ${tc.mint.substring(0,8)}... ${tc.isIncrease ? '+' : ''}${tc.change}`);
+                }
+            }
+            
+            // Detecta swap pattern
+            if (tokenChanges.length === 1 && Math.abs(solChange) > 100000) { // Min 0.0001 SOL
+                const token = tokenChanges[0];
+                
+                // Skip wrapped SOL
+                if (token.mint === WSOL_ADDRESS || token.mint === "So11111111111111111111111111111111111111112") {
+                    continue;
+                }
+                
+                if (token.isIncrease && solChange < 0) {
+                    // BUY
+                    logToFile(`   ✅ Universal: ${walletInfo.name} BUY detected`);
+                    swaps.push({
+                        signature: tx.transaction.signatures[0],
+                        owner: owner,
+                        type: 'universal',
+                        inMint: WSOL_ADDRESS,
+                        outMint: token.mint,
+                        inAmount: Math.abs(solChange),
+                        outAmount: Math.abs(token.change)
+                    });
+                } else if (!token.isIncrease && solChange > 0) {
+                    // SELL
+                    logToFile(`   ✅ Universal: ${walletInfo.name} SELL detected`);
+                    swaps.push({
+                        signature: tx.transaction.signatures[0],
+                        owner: owner,
+                        type: 'universal',
+                        inMint: token.mint,
+                        outMint: WSOL_ADDRESS,
+                        inAmount: Math.abs(token.change),
+                        outAmount: Math.abs(solChange)
+                    });
+                }
+            } else if (tokenChanges.length === 2) {
+                // Token to token swap
+                const token1 = tokenChanges[0];
+                const token2 = tokenChanges[1];
+                
+                if (token1.isIncrease !== token2.isIncrease) {
+                    const buyToken = token1.isIncrease ? token1 : token2;
+                    const sellToken = token1.isIncrease ? token2 : token1;
+                    
+                    logToFile(`   ✅ Universal: ${walletInfo.name} TOKEN-TOKEN swap detected`);
+                    swaps.push({
+                        signature: tx.transaction.signatures[0],
+                        owner: owner,
+                        type: 'universal',
+                        inMint: sellToken.mint,
+                        outMint: buyToken.mint,
+                        inAmount: Math.abs(sellToken.change),
+                        outAmount: Math.abs(buyToken.change)
+                    });
+                }
+            }
+        }
+        
+        return swaps;
+    } catch (error) {
+        logToFile(`❌ Universal decoder error: ${error}`);
+        return swaps;
+    }
+}
+
 const checkDB_Alert = async (buyWallets: any, old: any, swapData: any) => {
     try {
         logToFile(`🚨 checkDB_Alert START - Token: ${swapData.outMint}`);
@@ -98,7 +348,7 @@ const checkDB_Alert = async (buyWallets: any, old: any, swapData: any) => {
         const tokenInfo: any = await getTokenInfo(swapData)
         logToFile(`   Token name: ${tokenInfo.data?.name || 'N/A'}`);
         
-        const solPrice: any = await getTokenPrice_(swapData.inMint)
+        const solPrice: any = await getTokenPrice_(WSOL_ADDRESS)
         logToFile(`   SOL Price: ${solPrice}`);
         
         const extensions: any = tokenInfo.data?.extensions ?? null
@@ -130,21 +380,19 @@ const checkDB_Alert = async (buyWallets: any, old: any, swapData: any) => {
         if (extensions && extensions.telegram) {
             message = message + '\n🔗 <a href="' + extensions.telegram + '">Telegram</a>';
         }
-        if (extensions && extensions.discord) {
-            message = message + '\n🔗 <a href="' + extensions.discord + '">Discord</a>';
-        }
 
         message = message + '\n\n💯 <b>TradeScore</b>: ' + positionTradeScore;
         message = message + '\n\n🦚 <b>' + (buyWallets.length - sellWallets.length) + ' smart holders</b>';
         
         for (let i = 0; i < buyWallets.length; i++) {
             if (buyWallets[i].type === "buy") {
-                const amount = (buyWallets[i].inAmount / Math.pow(10, 9) * solPrice).toFixed(0);
-                message = message + '\n🟢 ' + buyWallets[i].name + '  ($' + amount + ') (' + buyWallets[i].txTime + ')';
+                const solAmount = buyWallets[i].inAmount / Math.pow(10, 9);
+                const usdAmount = solPrice ? (solAmount * solPrice).toFixed(0) : "N/A";
+                message = message + '\n🟢 ' + buyWallets[i].name + '  ($' + usdAmount + ') (' + buyWallets[i].txTime + ')';
             }
         }
 
-        message = message + '\n\n❗ <b>' + sellWallets.length + ' close</b>';
+        message = message + '\n\n◉ <b>' + sellWallets.length + ' close</b>';
         
         for (let i = 0; i < buyWallets.length; i++) {
             if (buyWallets[i].type === "sell") {
@@ -166,80 +414,57 @@ const checkDB_Alert = async (buyWallets: any, old: any, swapData: any) => {
         logToFile('✅ checkDB_Alert COMPLETE');
     } catch (error) {
         logToFile(`❌ ERROR in checkDB_Alert: ${error}`);
-        console.error('❌ Error in checkDB_Alert:', error);
     }
 }
 
 const processSwapData = async (swap_data: any) => {
     try {
-        logToFile("========================================");
-        logToFile("📊 processSwapData CALLED");
+        if (!swap_data) return;
         
-        if (!swap_data) {
-            logToFile("❌ swap_data is NULL - returning");
-            return
+        // Validazione
+        if (swap_data.inMint === WSOL_ADDRESS) {
+            const solAmount = swap_data.inAmount / 10**9;
+            if (solAmount > 1000) return;
+        } else if (swap_data.outMint === WSOL_ADDRESS) {
+            const solAmount = swap_data.outAmount / 10**9;
+            if (solAmount > 1000) return;
         }
         
-        logToFile(`✅ swap_data VALID`);
-        logToFile(`   Owner: ${swap_data.owner}`);
-        logToFile(`   Type: ${swap_data.type}`);
-        logToFile(`   inMint: ${swap_data.inMint}`);
-        logToFile(`   outMint: ${swap_data.outMint}`);
-        logToFile(`   inAmount: ${swap_data.inAmount}`);
-        logToFile(`   outAmount: ${swap_data.outAmount}`);
-        logToFile(`   Signature: ${swap_data.signature}`);
+        if (swap_data.inMint === swap_data.outMint) return;
+        if (BLACKLISTED_WALLETS.includes(swap_data.owner)) return;
         
-        // FILTRO 0: Check se inMint e outMint sono uguali (swap invalido)
-        if (swap_data.inMint === swap_data.outMint) {
-            logToFile(`❌ INVALID SWAP - Same token: ${swap_data.inMint}`);
-            return;
-        }
-        
-        // FILTRO 1: Blacklist
-        if (BLACKLISTED_WALLETS.includes(swap_data.owner)) {
-            logToFile(`❌ BLACKLISTED - ${swap_data.owner}`);
-            return;
-        }
-        
-        // FILTRO 2: Whitelist
         const trackedWallet = wallets.find(w => w.address === swap_data.owner);
-        if (!trackedWallet) {
-            logToFile(`❌ NOT IN WHITELIST - ${swap_data.owner}`);
-            return;
+        if (!trackedWallet) return;
+        
+        // Log solo per debug wallet
+        const debugName = Object.keys(DEBUG_WALLETS).find(name => 
+            DEBUG_WALLETS[name as keyof typeof DEBUG_WALLETS] === swap_data.owner
+        );
+        
+        if (debugName) {
+            logToFile(`📊 SWAP by ${trackedWallet.name}: ${swap_data.inMint === WSOL_ADDRESS ? 'BUY' : 'SELL'} ${(swap_data.inMint === WSOL_ADDRESS ? swap_data.inAmount/10**9 : swap_data.outAmount/10**9).toFixed(4)} SOL`);
         }
         
-        logToFile(`✅ WALLET OK: ${trackedWallet.name}`);
+        dexStats.swapsProcessed++;
 
         let db_wallet: any = await database.selectTrackWallet({ wallet: swap_data.owner })
         if (!db_wallet) {
-            logToFile("⚠️ Wallet NOT in DB - creating...");
             await database.updateTrackWallet({ 
                 wallet: swap_data.owner, 
                 tokens: [], 
                 name: trackedWallet.name 
             });
             db_wallet = await database.selectTrackWallet({ wallet: swap_data.owner });
-            logToFile("✅ Wallet created in DB");
-        } else {
-            logToFile(`✅ Wallet found in DB: ${db_wallet.name}`);
         }
         
         if (swap_data.inMint === WSOL_ADDRESS) {
-            // === BUY LOGIC ===
-            
-            // FILTRO 3: Skip se outMint è stablecoin
-            if (swap_data.outMint === USDC_ADDRESS || swap_data.outMint === USDT_ADDRESS) {
-                logToFile("⭕ Skip: buying stablecoin");
-                return
-            }
-            
-            logToFile(`💚 BUY DETECTED: ${trackedWallet.name} -> ${swap_data.outMint.substring(0,8)}...`);
+            // BUY
+            if (swap_data.outMint === USDC_ADDRESS || swap_data.outMint === USDT_ADDRESS) return;
             
             const buytxTime = new Date();
-
             let token_index = db_wallet.tokens.findIndex((mint: any) => mint.mint === swap_data.outMint)
+            
             if (token_index < 0) {
-                logToFile("➕ New token for this wallet");
                 db_wallet.tokens.push({
                     mint: swap_data.outMint, 
                     type: "buy", 
@@ -255,7 +480,6 @@ const processSwapData = async (swap_data: any) => {
                     inAmount: swap_data.inAmount
                 })
             } else {
-                logToFile("🔄 Existing token - updating");
                 db_wallet.tokens[token_index].type = "buy"
                 db_wallet.tokens[token_index].txTime = buytxTime.toLocaleString('en-US', {
                     hour12: false,
@@ -270,21 +494,16 @@ const processSwapData = async (swap_data: any) => {
             }
 
             await database.updateTrackWallet({ wallet: swap_data.owner, tokens: db_wallet.tokens, name: db_wallet.name })
-            logToFile("✅ Wallet updated in DB");
 
             const buyPosition: any = await database.selectTrackPosition({ token: swap_data.outMint })
-            logToFile(`Position check: ${buyPosition ? "EXISTS" : "NEW"}`);
-
-            let openPosition: Boolean = false
+            let openPosition = false
+            
             if (buyPosition && buyPosition.token) {
                 openPosition = true
                 let wallet_index: any = buyPosition.wallets.findIndex((wallet: any) => wallet.address === swap_data.owner)
-                
                 const buysBefore = buyPosition.wallets.filter((w: any) => w.type === "buy").length;
-                logToFile(`📊 Buyers BEFORE update: ${buysBefore}`);
                 
                 if (wallet_index < 0) {
-                    logToFile("➕ Adding wallet to position");
                     buyPosition.wallets.push({
                         address: swap_data.owner, 
                         type: "buy", 
@@ -300,9 +519,7 @@ const processSwapData = async (swap_data: any) => {
                             second: '2-digit'
                         })
                     })
-                }
-                else {
-                    logToFile("🔄 Updating wallet in position");
+                } else {
                     buyPosition.wallets[wallet_index].type = "buy"
                     buyPosition.wallets[wallet_index].inAmount = swap_data.inAmount
                     buyPosition.wallets[wallet_index].txTime = buytxTime.toLocaleString('en-US', {
@@ -319,28 +536,19 @@ const processSwapData = async (swap_data: any) => {
                 await database.updateTrackPosition({ token: swap_data.outMint, wallets: buyPosition.wallets, old: true })
                 const buysAfter = buyPosition.wallets.filter((wallet: any) => wallet.type === "buy").length;
 
-                logToFile(`📊 Buyers AFTER update: ${buysAfter}`);
-
-                // INVIO ALERT se >= 3 buyer E il numero è aumentato
-                if (buysAfter >= 3 && buysAfter > buysBefore) {
-                    logToFile(`🚨🚨🚨 ALERT TRIGGER: ${buysAfter} buyers (was ${buysBefore})!`);
+                if (buysAfter >= ALERT_THRESHOLD && buysAfter > buysBefore) {
+                    logToFile(`🚨 ALERT: ${buysAfter} buyers for ${swap_data.outMint.substring(0,8)}...`);
                     await checkDB_Alert(buyPosition.wallets, buyPosition?.old, swap_data)
-                }
-                else if (buysAfter < 3) {
-                    logToFile(`⭕ Less than 3 buyers (${buysAfter}), removing position`);
+                } else if (buysAfter < ALERT_THRESHOLD) {
                     await database.removeTrackPosition({ token: swap_data.outMint })
                     openPosition = false
-                } else {
-                    logToFile(`⭕ No new buyer (before=${buysBefore}, after=${buysAfter})`);
                 }
             }
 
             if (!openPosition) {
-                logToFile("🔍 No open position - checking all wallets...");
                 let buycount = 0
                 let buyWallets: any = []
                 const trackWallets: any = await database.selectTrackWallets({})
-                logToFile(`📊 Checking ${trackWallets.length} total wallets in DB`);
                 
                 for (const wallet of trackWallets) {
                     for (const token of wallet.tokens) {
@@ -353,79 +561,40 @@ const processSwapData = async (swap_data: any) => {
                                 inAmount: token.inAmount, 
                                 txTime: token.txTime 
                             })
-                            logToFile(`  ✓ ${wallet.name} has this token`);
                         }
                     }
                 }
 
-                logToFile(`📊 Found ${buycount} wallets with this token`);
-
-                if (buycount >= 3 && buyWallets.length >= 3) {
-                    logToFile(`🚨🚨🚨 NEW POSITION ALERT: ${buyWallets.length} buyers!`);
+                if (buycount >= ALERT_THRESHOLD) {
+                    logToFile(`🚨 NEW ALERT: ${buycount} buyers for ${swap_data.outMint.substring(0,8)}...`);
                     await database.updateTrackPosition({ token: swap_data.outMint, wallets: buyWallets, old: false })
                     await checkDB_Alert(buyWallets, false, swap_data)
-                } else {
-                    logToFile(`⭕ Only ${buycount} wallets, need 3 for alert`);
                 }
             }
         } else {
-            // === SELL LOGIC ===
-            
-            // FILTRO 4: Skip se inMint è stablecoin
-            if (swap_data.inMint === USDC_ADDRESS || swap_data.inMint === USDT_ADDRESS) {
-                logToFile("⭕ Skip: selling to stablecoin");
-                return
-            }
-            
-            logToFile(`🔴 SELL DETECTED: ${trackedWallet.name} -> ${swap_data.inMint.substring(0,8)}...`);
-            
-            let solPrice: any = await getTokenPrice_(WSOL_ADDRESS)
+            // SELL
+            if (swap_data.inMint === USDC_ADDRESS || swap_data.inMint === USDT_ADDRESS) return;
 
             let token_index = db_wallet.tokens.findIndex((mint: any) => mint.mint === swap_data.inMint)
-            let sellAvailable = false;
-
             if (token_index >= 0) {
-                // Check if rimane meno di $60 dopo la sell
-                if ((Number(db_wallet.tokens[token_index].inAmount) - Number(swap_data.outAmount)) / 10 ** 9 * solPrice < 60) {
-                    db_wallet.tokens[token_index].type = "sell"
-                    db_wallet.tokens[token_index].inAmount = Number(db_wallet.tokens[token_index].inAmount) - Number(swap_data.inAmount)
-                    if (Number(db_wallet.tokens[token_index].inAmount) < 0) db_wallet.tokens[token_index].inAmount = 0
-                    await database.updateTrackWallet({ wallet: swap_data.owner, tokens: db_wallet.tokens, name: db_wallet.name })
-                    sellAvailable = true
-                    logToFile("✅ Sell registered (position < $60)");
-                } else {
-                    logToFile("⭕ Partial sell - position still > $60");
-                }
-            } else {
-                logToFile("⚠️ Token not found in wallet for sell");
-            }
+                db_wallet.tokens[token_index].type = "sell"
+                db_wallet.tokens[token_index].inAmount = 0
+                await database.updateTrackWallet({ wallet: swap_data.owner, tokens: db_wallet.tokens, name: db_wallet.name })
 
-            if (sellAvailable) {
                 const sellPosition: any = await database.selectTrackPosition({ token: swap_data.inMint })
                 if (sellPosition) {
                     let wallet_index: any = sellPosition.wallets.findIndex((wallet: any) => wallet.address === swap_data.owner)
                     if (wallet_index >= 0) {
                         sellPosition.wallets[wallet_index].type = "sell"
                         await database.updateTrackPosition({ token: swap_data.inMint, wallets: sellPosition.wallets, old: true })
-                        
-                        const buysInPosition: any = sellPosition.wallets.filter((wallet: any) => wallet.type === "buy")
-                        if (buysInPosition.length >= 3) {
-                            logToFile("🚨 SELL ALERT");
-                            await checkDB_Alert(sellPosition.wallets, true, swap_data)
-                        } else {
-                            logToFile(`⭕ Position now has only ${buysInPosition.length} buyers - no alert`);
-                        }
                     }
                 }
             }
 
             await delayForTrxSync(swap_data.signature)
         }
-        
-        logToFile("========================================");
     } catch (error) {
         logToFile(`❌ ERROR in processSwapData: ${error}`);
-        console.error('❌ Error in processSwapData:', error);
     }
 }
 
@@ -440,101 +609,130 @@ const parseTransaction = async (data: any) => {
             const accountKeys = txn.transaction.message.staticAccountKeys
             const signature = txn.transaction.signatures[0];
             
-            const involvedAccounts = accountKeys.map((key: PublicKey) => key.toBase58());
+            dexStats.total++;
             
-            const ourWallets = involvedAccounts.filter((acc: string) => 
-                wallets.some(w => w.address === acc)
-            );
+            // Trova TUTTI i nostri wallet
+            const ourWallets = findOurWalletsInTransaction(accountKeys);
+            if (ourWallets.length === 0) return;
             
-            if (ourWallets.length > 0) {
-                logToFile(`✓ TRANSACTION WITH OUR WALLET: ${signature}`);
-                logToFile(`  Our wallets involved: ${ourWallets.join(', ')}`);
+            dexStats.ourWalletTxs++;
+            
+            // Log dettagliato per debug wallet
+            for (const w of ourWallets) {
+                const debugName = Object.keys(DEBUG_WALLETS).find(name => 
+                    DEBUG_WALLETS[name as keyof typeof DEBUG_WALLETS] === w.address
+                );
+                if (debugName) {
+                    logToFile(`🔍 ${debugName} in tx ${signature.substring(0,8)}... at position ${w.position}`);
+                    
+                    // Check DEX
+                    const hasJup = accountKeys.some((k: PublicKey) => k.equals(JUPITER_V6_PROGRAM_ID));
+                    const hasPump = accountKeys.some((k: PublicKey) => k.equals(PUMP_FUN_PROGRAM_ID));
+                    const hasRay = accountKeys.some((k: PublicKey) => k.equals(RayLiqPoolv4));
+                    const hasCpmm = accountKeys.some((k: PublicKey) => k.toBase58() === "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C");
+                    
+                    if (hasJup || hasPump || hasRay || hasCpmm) {
+                        logToFile(`   DEX: Jup=${hasJup} Pump=${hasPump} Ray=${hasRay} CPMM=${hasCpmm}`);
+                        
+                        // Check chi è l'owner
+                        const owner = accountKeys[0].toBase58();
+                        const ownerWallet = wallets.find(w => w.address === owner);
+                        
+                        if (w.position !== 0) {
+                            logToFile(`   ⚠️ ${debugName} NOT owner! Owner is: ${ownerWallet?.name || owner.substring(0,8) + '...'}`);
+                            dexStats.missedSwaps++;
+                        }
+                    }
+                }
             }
             
-            // Jupiter
-            const hasJupiter = accountKeys.find((programId: PublicKey) => programId.equals(JUPITER_V6_PROGRAM_ID))
-            if (hasJupiter) {
-                logToFile("🟢 Jupiter transaction detected");
-                try {
-                    const ret = await getJupiterSwapInfo(txn)
-                    if (ret) {
-                        logToFile(`✅ Jupiter decode OK - proceeding to processSwapData`);
-                        await processSwapData(ret)
-                    } else {
-                        logToFile("❌ Jupiter decode returned NULL");
-                    }
-                } catch (error) {
-                    logToFile(`❌ Jupiter decode ERROR: ${error}`);
+            const allSwaps = [];
+            
+            // Prova decoder standard solo per l'owner
+            const owner = accountKeys[0].toBase58();
+            const isOwnerTracked = wallets.find(w => w.address === owner);
+            
+            if (isOwnerTracked) {
+                // Jupiter
+                if (accountKeys.some((k: PublicKey) => k.equals(JUPITER_V6_PROGRAM_ID))) {
+                    dexStats.jupiter++;
+                    try {
+                        const ret = await getJupiterSwapInfo(txn)
+                        if (ret) allSwaps.push(ret);
+                    } catch (error) {}
                 }
-                return
+                
+                // PumpFun
+                if (accountKeys.some((k: PublicKey) => k.equals(PUMP_FUN_PROGRAM_ID))) {
+                    dexStats.pumpfun++;
+                    try {
+                        const ret = await decodePumpfunTxn(txn)
+                        if (ret) allSwaps.push(ret);
+                    } catch (error) {}
+                }
+                
+                // Raydium CPMM
+                if (accountKeys.some((k: PublicKey) => k.toBase58() === "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C")) {
+                    dexStats.cpmm++;
+                    try {
+                        const ret = await decodeRaydiumCpmmTxn(txn)
+                        if (ret) allSwaps.push(ret);
+                    } catch (error) {}
+                }
+                
+                // Raydium
+                if (accountKeys.some((k: PublicKey) => k.equals(RayLiqPoolv4))) {
+                    dexStats.raydium++;
+                    try {
+                        const ret = await decodeRaydiumTxn(txn)
+                        if (ret) allSwaps.push(ret);
+                    } catch (error) {}
+                }
             }
             
-            // Raydium CPMM
-            const hasCpmm = accountKeys.find((programId: PublicKey) => 
-                programId.equals(new PublicKey("CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C"))
-            )
-            if (hasCpmm) {
-                logToFile("🟢 Raydium CPMM transaction detected");
-                try {
-                    const txn = TXN_FORMATTER.formTransactionFromJson(data.transaction, Date.now());
-                    const ret = await decodeRaydiumCpmmTxn(txn)
-                    if (ret) {
-                        logToFile(`✅ Raydium CPMM decode OK - proceeding to processSwapData`);
-                        await processSwapData(ret)
-                    } else {
-                        logToFile("❌ Raydium CPMM decode returned NULL");
+            // SEMPRE usa decoder universale per catturare swap in altre posizioni
+            const universalSwaps = await decodeUniversalSwap(txn);
+            if (universalSwaps.length > 0) {
+                dexStats.universal += universalSwaps.length;
+                for (const swap of universalSwaps) {
+                    // Evita duplicati
+                    if (!allSwaps.find(s => s.owner === swap.owner && Math.abs(s.inAmount - swap.inAmount) < 1000)) {
+                        allSwaps.push(swap);
                     }
-                } catch (error) {
-                    logToFile(`❌ Raydium CPMM decode ERROR: ${error}`);
                 }
-                return
+            } else if (allSwaps.length === 0) {
+                // Nessuno swap trovato ma c'erano nostri wallet
+                const hasAnyDex = accountKeys.some((k: PublicKey) => 
+                    k.equals(JUPITER_V6_PROGRAM_ID) || 
+                    k.equals(PUMP_FUN_PROGRAM_ID) || 
+                    k.equals(RayLiqPoolv4) ||
+                    k.toBase58() === "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C"
+                );
+                
+                if (hasAnyDex) {
+                    for (const w of ourWallets) {
+                        const debugName = Object.keys(DEBUG_WALLETS).find(name => 
+                            DEBUG_WALLETS[name as keyof typeof DEBUG_WALLETS] === w.address
+                        );
+                        if (debugName) {
+                            logToFile(`   ❌ MISSED SWAP for ${debugName} - DEX detected but no swap decoded`);
+                        }
+                    }
+                }
+            }
+            
+            // Processa tutti gli swap
+            for (const swap of allSwaps) {
+                await processSwapData(swap);
             }
 
-            // Raydium
-            const hasRaydium = accountKeys.find((programId: PublicKey) => programId.equals(RayLiqPoolv4))
-            if (hasRaydium) {
-                logToFile("🟢 Raydium transaction detected");
-                try {
-                    const txn = TXN_FORMATTER.formTransactionFromJson(data.transaction, Date.now());
-                    const ret = await decodeRaydiumTxn(txn)
-                    if (ret) {
-                        logToFile(`✅ Raydium decode OK - proceeding to processSwapData`);
-                        await processSwapData(ret)
-                    } else {
-                        logToFile("❌ Raydium decode returned NULL");
-                    }
-                } catch (error) {
-                    logToFile(`❌ Raydium decode ERROR: ${error}`);
-                }
-                return
-            }
-            
-            // PumpFun
-            const hasPumpFun = accountKeys.find((programId: PublicKey) => programId.equals(PUMP_FUN_PROGRAM_ID))
-            if (hasPumpFun) {
-                logToFile("🟢 PumpFun transaction detected");
-                try {
-                    const ret = await decodePumpfunTxn(txn)
-                    if (ret) {
-                        logToFile(`✅ PumpFun decode OK - proceeding to processSwapData`);
-                        await processSwapData(ret)
-                    } else {
-                        logToFile("❌ PumpFun decode returned NULL");
-                    }
-                } catch (error) {
-                    logToFile(`❌ PumpFun decode ERROR: ${error}`);
-                }
-                return
-            }
-            
-            if (ourWallets.length > 0) {
-                logToFile("⚠️ Transaction from our wallet but NO DEX detected");
-                logToFile(`  First 5 programs: ${accountKeys.slice(0,5).map(k => k.toBase58().substring(0,8) + "...").join(', ')}`);
+            // Stats ogni 100 tx
+            if (dexStats.total % 100 === 0) {
+                logToFile(`📊 STATS: Txs=${dexStats.total} OurWallet=${dexStats.ourWalletTxs} Swaps=${dexStats.swapsProcessed} Missed=${dexStats.missedSwaps}`);
             }
         }
     } catch (error) {
         logToFile(`❌ ERROR parsing transaction: ${error}`);
-        console.error('❌ Error parsing transaction:', error);
     }
 }
 
@@ -548,10 +746,10 @@ async function handleStream(client: Client, args: SubscribeRequest) {
     
     const heartbeat = setInterval(() => {
         const timeSinceLastData = Date.now() - lastDataTime;
-        logToFile(`💓 Stream alive - last data: ${Math.floor(timeSinceLastData / 1000)}s ago, processed: ${transactionCount} txs`);
+        logToFile(`💗 Stream: ${Math.floor(timeSinceLastData/1000)}s | Txs: ${transactionCount} | Our: ${dexStats.ourWalletTxs} | Swaps: ${dexStats.swapsProcessed}`);
         
         if (timeSinceLastData > 300000) {
-            logToFile('⚠️ Stream dead - forcing reconnection...');
+            logToFile('⚠️ Stream dead - reconnecting...');
             clearInterval(heartbeat);
             stream.end();
         }
@@ -579,9 +777,6 @@ async function handleStream(client: Client, args: SubscribeRequest) {
     stream.on("data", (data) => {
         lastDataTime = Date.now();
         transactionCount++;
-        if (transactionCount % 50 === 0) {
-            logToFile(`📊 Processed ${transactionCount} transactions`);
-        }
         parseTransaction(data)
     });
 
@@ -604,10 +799,12 @@ async function handleStream(client: Client, args: SubscribeRequest) {
 async function subscribeCommand(client: Client, args: SubscribeRequest) {
     while (true) {
         try {
-            logToFile("🚀 Starting Substream server...")
+            logToFile("🚀 Starting stream...");
+            logToFile(`📊 Alert threshold: ${ALERT_THRESHOLD} wallet(s)`);
+            logToFile("🔍 Universal decoder: ENHANCED");
             await handleStream(client, args);
         } catch (error) {
-            logToFile(`❌ Stream error, restarting in 1 second... Error: ${error}`);
+            logToFile(`❌ Stream error, restarting... ${error}`);
             await new Promise((resolve) => setTimeout(resolve, 1000));
         }
     }
@@ -617,31 +814,19 @@ const client = new Client('https://grpc.eu.shyft.to', process.env.GRPC_TOKEN, un
 
 export const start = async () => {
     logToFile("================================");
-    logToFile('🚀 TRACK-SWAP INITIALIZATION');
+    logToFile('🚀 TRACK-SWAP V3 - ENHANCED');
     logToFile("================================");
-    logToFile(`Telegram Bot Token: ${process.env.ALERTS_BOT_TOKEN || process.env.BOT_TOKEN ? '✓' : '✗'}`);
-    logToFile(`GRPC Token: ${process.env.GRPC_TOKEN ? '✓' : '✗'}`);
-    logToFile('GRPC Endpoint: https://grpc.eu.shyft.to');
+    logToFile(`Alert threshold: ${ALERT_THRESHOLD} wallet(s)`);
     
     let detection_wallets: string[] = await getWallets()
-    logToFile(`📊 Total wallets to track: ${detection_wallets.length}`);
+    logToFile(`📊 Tracking ${detection_wallets.length} wallets`);
     
-    const testWallets = [
-        'prED5Hv9jaZmKRw7NcENdUMu6Pw2NWBmN2DSAEbNP7Y',
-        'pp2rgZ8Bshvc1XHCerHJH77fNA7AGQND8D9zfW2AeVb',
-        '4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf'
-    ];
-    
-    for (let wallet of testWallets) {
-        if (detection_wallets.includes(wallet)) {
-            logToFile(`✓ ${wallet.substring(0,8)}... is in tracking list`);
-        } else {
-            logToFile(`✗ ${wallet.substring(0,8)}... NOT in tracking list`);
+    // Verifica debug wallets
+    for (const [name, address] of Object.entries(DEBUG_WALLETS)) {
+        if (detection_wallets.includes(address)) {
+            logToFile(`✅ ${name} is tracked`);
         }
     }
-    
-    logToFile("================================");
-    logToFile("🌐 Starting gRPC stream subscription...");
     
     const req: SubscribeRequest = {
         accounts: {},
@@ -665,6 +850,5 @@ export const start = async () => {
         commitment: CommitmentLevel.CONFIRMED,
     };
     
-    logToFile(`📡 Subscription request created with ${detection_wallets.length} wallets`);
     subscribeCommand(client, req);
 }
