@@ -37,15 +37,17 @@ const BLACKLISTED_WALLETS = [
     '4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf'
 ];
 
-// SOGLIA PER ALERT
-const ALERT_THRESHOLD = 3;
+// SOGLIA PER ALERT - Abbassata a 2 per avere più segnali
+const ALERT_THRESHOLD = 2;
 
 // Wallet specifici da monitorare con log extra
 const DEBUG_WALLETS = {
     'Assassin.eth': '6LChaYRYtEYjLEHhzo4HdEmgNwu2aia8CM8VhR9wn6n7',
     'Doc': 'DYAn4XpAkN5mhiXkRB7dGq4Jadnx6XYgu8L5b3WGhbrt',
     'GigaBrain': '3h65MmPZksoKKyEpEjnWU2Yk2iYT5oZDNitGy5cTaxoE',
-    'Gake': 'DNfuF1L6rmSpeXJQmVvw9n2LdPUuuRdDiNBpyMqVha41'
+    'Gake': 'DNfuF1L6rmSpeXJQmVvw9n2LdPUuuRdDiNBpyMqVha41',
+    '1': '4t9bWuZsXXKGMgmd96nFD4KWxyPNTsPm4q9jEMH4jD2i',
+    'LetterBomb': 'BtMBMPkoNbnLF9Xn552guQq528KKXcsNBNNBre3oaQtr'
 };
 
 // Statistiche per debugging
@@ -128,7 +130,7 @@ function findOurWalletsInTransaction(accountKeys: PublicKey[]): {address: string
     return results;
 }
 
-// Decoder universale POTENZIATO - cattura TUTTI gli swap
+// Decoder universale POTENZIATO
 async function decodeUniversalSwap(tx: VersionedTransactionResponse): Promise<any[]> {
     const swaps = [];
     
@@ -162,8 +164,6 @@ async function decodeUniversalSwap(tx: VersionedTransactionResponse): Promise<an
             
             // Cerca nei balance POST per account che appartengono al nostro wallet
             for (const post of postBalances) {
-                // Check se questo token account appartiene al nostro wallet
-                // Il owner potrebbe essere il nostro wallet O potrebbe essere un account derivato
                 const isOurAccount = post.owner === owner || 
                     (post.accountIndex < accountKeys.length && accountKeys[post.accountIndex].toBase58() === owner);
                 
@@ -217,32 +217,6 @@ async function decodeUniversalSwap(tx: VersionedTransactionResponse): Promise<an
                 }
             }
             
-            // Metodo 2: Check anche gli account che il wallet potrebbe controllare
-            // PumpFun e altri DEX potrebbero usare PDA (Program Derived Addresses)
-            if (tokenChanges.length === 0) {
-                // Cerca pattern più ampi
-                for (let i = 0; i < postBalances.length; i++) {
-                    const post = postBalances[i];
-                    const pre = preBalances.find(p => p.accountIndex === post.accountIndex);
-                    
-                    // Se c'è un cambiamento significativo
-                    if (pre && post) {
-                        const change = Number(post.uiTokenAmount.amount) - Number(pre.uiTokenAmount.amount);
-                        if (Math.abs(change) > 0) {
-                            // Check se questo potrebbe essere collegato al nostro wallet
-                            // guardando le istruzioni della transazione
-                            const mightBeOurs = accountKeys.slice(0, 20).some(k => k.toBase58() === owner);
-                            
-                            if (mightBeOurs) {
-                                if (debugName) {
-                                    logToFile(`   🔍 Potential token change for ${debugName}: ${post.mint.substring(0,8)}...`);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            
             // Check SOL change
             let solChange = 0;
             if (ourWallet.position < tx.meta.postBalances.length && 
@@ -255,11 +229,6 @@ async function decodeUniversalSwap(tx: VersionedTransactionResponse): Promise<an
                 }
             }
             
-            // Skip se SOL change troppo grande
-            if (Math.abs(solChange) > 1000 * 10**9) {
-                continue;
-            }
-            
             // Log dettagliato per debug wallet
             if (debugName && (tokenChanges.length > 0 || Math.abs(solChange) > 100000)) {
                 logToFile(`   🔍 ${debugName} Universal Analysis:`);
@@ -270,8 +239,8 @@ async function decodeUniversalSwap(tx: VersionedTransactionResponse): Promise<an
                 }
             }
             
-            // Detecta swap pattern
-            if (tokenChanges.length === 1 && Math.abs(solChange) > 100000) { // Min 0.0001 SOL
+            // Detecta swap pattern - SOGLIE ABBASSATE
+            if (tokenChanges.length === 1 && Math.abs(solChange) > 10000) { // Abbassato a 0.00001 SOL
                 const token = tokenChanges[0];
                 
                 // Skip wrapped SOL
@@ -401,7 +370,7 @@ const checkDB_Alert = async (buyWallets: any, old: any, swapData: any) => {
         }
 
         message = message + '\n\n⚡ <a href="https://jup.ag/swap/' + swapData.outMint + '-SOL">Jupiter</a>';
-        message = message + '\n🐸 <a href="https://gmgn.ai/sol/token/' + swapData.outMint + '">Gmgn</a>';
+        message = message + '\n🸠 <a href="https://gmgn.ai/sol/token/' + swapData.outMint + '">Gmgn</a>';
         message = message + '\n🚀 <a href="https://photon-sol.tinyastro.io/en/lp/' + swapData.outMint + '">Photon</a>';
         message = message + '\n🐂 <a href="https://neo.bullx.io/terminal?chainId=1399811149&address=' + swapData.outMint + '">Bullx</a>';
 
@@ -421,14 +390,8 @@ const processSwapData = async (swap_data: any) => {
     try {
         if (!swap_data) return;
         
-        // Validazione
-        if (swap_data.inMint === WSOL_ADDRESS) {
-            const solAmount = swap_data.inAmount / 10**9;
-            if (solAmount > 1000) return;
-        } else if (swap_data.outMint === WSOL_ADDRESS) {
-            const solAmount = swap_data.outAmount / 10**9;
-            if (solAmount > 1000) return;
-        }
+        // RIMOSSA la validazione degli importi troppo alti
+        // Ora accetta TUTTI gli swap
         
         if (swap_data.inMint === swap_data.outMint) return;
         if (BLACKLISTED_WALLETS.includes(swap_data.owner)) return;
@@ -436,7 +399,7 @@ const processSwapData = async (swap_data: any) => {
         const trackedWallet = wallets.find(w => w.address === swap_data.owner);
         if (!trackedWallet) return;
         
-        // Log solo per debug wallet
+        // Log per debug wallet
         const debugName = Object.keys(DEBUG_WALLETS).find(name => 
             DEBUG_WALLETS[name as keyof typeof DEBUG_WALLETS] === swap_data.owner
         );
@@ -624,84 +587,97 @@ const parseTransaction = async (data: any) => {
                 );
                 if (debugName) {
                     logToFile(`🔍 ${debugName} in tx ${signature.substring(0,8)}... at position ${w.position}`);
-                    
-                    // Check DEX
-                    const hasJup = accountKeys.some((k: PublicKey) => k.equals(JUPITER_V6_PROGRAM_ID));
-                    const hasPump = accountKeys.some((k: PublicKey) => k.equals(PUMP_FUN_PROGRAM_ID));
-                    const hasRay = accountKeys.some((k: PublicKey) => k.equals(RayLiqPoolv4));
-                    const hasCpmm = accountKeys.some((k: PublicKey) => k.toBase58() === "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C");
-                    
-                    if (hasJup || hasPump || hasRay || hasCpmm) {
-                        logToFile(`   DEX: Jup=${hasJup} Pump=${hasPump} Ray=${hasRay} CPMM=${hasCpmm}`);
-                        
-                        // Check chi è l'owner
-                        const owner = accountKeys[0].toBase58();
-                        const ownerWallet = wallets.find(w => w.address === owner);
-                        
-                        if (w.position !== 0) {
-                            logToFile(`   ⚠️ ${debugName} NOT owner! Owner is: ${ownerWallet?.name || owner.substring(0,8) + '...'}`);
-                            dexStats.missedSwaps++;
-                        }
-                    }
                 }
             }
             
             const allSwaps = [];
             
-            // Prova decoder standard solo per l'owner
-            const owner = accountKeys[0].toBase58();
-            const isOwnerTracked = wallets.find(w => w.address === owner);
-            
-            if (isOwnerTracked) {
-                // Jupiter
-                if (accountKeys.some((k: PublicKey) => k.equals(JUPITER_V6_PROGRAM_ID))) {
-                    dexStats.jupiter++;
-                    try {
-                        const ret = await getJupiterSwapInfo(txn)
-                        if (ret) allSwaps.push(ret);
-                    } catch (error) {}
-                }
-                
-                // PumpFun
-                if (accountKeys.some((k: PublicKey) => k.equals(PUMP_FUN_PROGRAM_ID))) {
-                    dexStats.pumpfun++;
-                    try {
-                        const ret = await decodePumpfunTxn(txn)
-                        if (ret) allSwaps.push(ret);
-                    } catch (error) {}
-                }
-                
-                // Raydium CPMM
-                if (accountKeys.some((k: PublicKey) => k.toBase58() === "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C")) {
-                    dexStats.cpmm++;
-                    try {
-                        const ret = await decodeRaydiumCpmmTxn(txn)
-                        if (ret) allSwaps.push(ret);
-                    } catch (error) {}
-                }
-                
-                // Raydium
-                if (accountKeys.some((k: PublicKey) => k.equals(RayLiqPoolv4))) {
-                    dexStats.raydium++;
-                    try {
-                        const ret = await decodeRaydiumTxn(txn)
-                        if (ret) allSwaps.push(ret);
-                    } catch (error) {}
+            // ESEGUI SEMPRE I DECODER SE CI SONO NOSTRI WALLET
+            // Jupiter
+            if (accountKeys.some((k: PublicKey) => k.equals(JUPITER_V6_PROGRAM_ID))) {
+                dexStats.jupiter++;
+                try {
+                    const ret = await getJupiterSwapInfo(txn);
+                    if (ret && wallets.find(w => w.address === ret.owner)) {
+                        logToFile(`✅ Jupiter swap detected for ${ret.owner.substring(0,8)}...`);
+                        allSwaps.push(ret);
+                    }
+                } catch (error) {
+                    logToFile(`❌ Jupiter decode error: ${error}`);
                 }
             }
             
-            // SEMPRE usa decoder universale per catturare swap in altre posizioni
-            const universalSwaps = await decodeUniversalSwap(txn);
-            if (universalSwaps.length > 0) {
-                dexStats.universal += universalSwaps.length;
-                for (const swap of universalSwaps) {
-                    // Evita duplicati
-                    if (!allSwaps.find(s => s.owner === swap.owner && Math.abs(s.inAmount - swap.inAmount) < 1000)) {
-                        allSwaps.push(swap);
+            // PumpFun
+            if (accountKeys.some((k: PublicKey) => k.equals(PUMP_FUN_PROGRAM_ID))) {
+                dexStats.pumpfun++;
+                try {
+                    const ret = await decodePumpfunTxn(txn);
+                    if (ret && wallets.find(w => w.address === ret.owner)) {
+                        logToFile(`✅ PumpFun swap detected for ${ret.owner.substring(0,8)}...`);
+                        allSwaps.push(ret);
+                    }
+                } catch (error) {
+                    logToFile(`❌ PumpFun decode error: ${error}`);
+                }
+            }
+            
+            // Raydium CPMM
+            if (accountKeys.some((k: PublicKey) => k.toBase58() === "CPMMoo8L3F4NbTegBCKVNunggL7H1ZpdTHKxQB5qKP1C")) {
+                dexStats.cpmm++;
+                try {
+                    const ret = await decodeRaydiumCpmmTxn(txn);
+                    if (ret && wallets.find(w => w.address === ret.owner)) {
+                        logToFile(`✅ Raydium CPMM swap detected for ${ret.owner.substring(0,8)}...`);
+                        allSwaps.push(ret);
+                    }
+                } catch (error) {
+                    logToFile(`❌ CPMM decode error: ${error}`);
+                }
+            }
+            
+            // Raydium
+            if (accountKeys.some((k: PublicKey) => k.equals(RayLiqPoolv4))) {
+                dexStats.raydium++;
+                try {
+                    const ret = await decodeRaydiumTxn(txn);
+                    if (ret && wallets.find(w => w.address === ret.owner)) {
+                        logToFile(`✅ Raydium swap detected for ${ret.owner.substring(0,8)}...`);
+                        allSwaps.push(ret);
+                    }
+                } catch (error) {
+                    logToFile(`❌ Raydium decode error: ${error}`);
+                }
+            }
+            
+            // SEMPRE usa decoder universale per catturare swap non standard
+            try {
+                const universalSwaps = await decodeUniversalSwap(txn);
+                if (universalSwaps.length > 0) {
+                    dexStats.universal += universalSwaps.length;
+                    for (const swap of universalSwaps) {
+                        // Evita duplicati
+                        const isDuplicate = allSwaps.some(s => 
+                            s.owner === swap.owner && 
+                            Math.abs(s.inAmount - swap.inAmount) < 1000
+                        );
+                        if (!isDuplicate) {
+                            logToFile(`✅ Universal swap detected for ${swap.owner.substring(0,8)}...`);
+                            allSwaps.push(swap);
+                        }
                     }
                 }
-            } else if (allSwaps.length === 0) {
-                // Nessuno swap trovato ma c'erano nostri wallet
+            } catch (error) {
+                logToFile(`❌ Universal decode error: ${error}`);
+            }
+            
+            // Processa tutti gli swap trovati
+            if (allSwaps.length > 0) {
+                logToFile(`🔄 Processing ${allSwaps.length} swap(s)`);
+                for (const swap of allSwaps) {
+                    await processSwapData(swap);
+                }
+            } else if (ourWallets.length > 0) {
+                // Log se abbiamo wallet ma nessuno swap
                 const hasAnyDex = accountKeys.some((k: PublicKey) => 
                     k.equals(JUPITER_V6_PROGRAM_ID) || 
                     k.equals(PUMP_FUN_PROGRAM_ID) || 
@@ -715,20 +691,17 @@ const parseTransaction = async (data: any) => {
                             DEBUG_WALLETS[name as keyof typeof DEBUG_WALLETS] === w.address
                         );
                         if (debugName) {
-                            logToFile(`   ❌ MISSED SWAP for ${debugName} - DEX detected but no swap decoded`);
+                            logToFile(`   ⚠️ POSSIBLE MISSED SWAP for ${debugName} - DEX detected but no swap decoded`);
                         }
                     }
+                    dexStats.missedSwaps++;
                 }
-            }
-            
-            // Processa tutti gli swap
-            for (const swap of allSwaps) {
-                await processSwapData(swap);
             }
 
             // Stats ogni 100 tx
             if (dexStats.total % 100 === 0) {
                 logToFile(`📊 STATS: Txs=${dexStats.total} OurWallet=${dexStats.ourWalletTxs} Swaps=${dexStats.swapsProcessed} Missed=${dexStats.missedSwaps}`);
+                logToFile(`   DEX breakdown: Jup=${dexStats.jupiter} Pump=${dexStats.pumpfun} Ray=${dexStats.raydium} CPMM=${dexStats.cpmm} Universal=${dexStats.universal}`);
             }
         }
     } catch (error) {
@@ -802,6 +775,7 @@ async function subscribeCommand(client: Client, args: SubscribeRequest) {
             logToFile("🚀 Starting stream...");
             logToFile(`📊 Alert threshold: ${ALERT_THRESHOLD} wallet(s)`);
             logToFile("🔍 Universal decoder: ENHANCED");
+            logToFile("✅ All DEX decoders: ACTIVE for all tracked wallets");
             await handleStream(client, args);
         } catch (error) {
             logToFile(`❌ Stream error, restarting... ${error}`);
@@ -814,9 +788,12 @@ const client = new Client('https://grpc.eu.shyft.to', process.env.GRPC_TOKEN, un
 
 export const start = async () => {
     logToFile("================================");
-    logToFile('🚀 TRACK-SWAP V3 - ENHANCED');
+    logToFile('�� TRACK-SWAP V4 - FULLY FIXED');
     logToFile("================================");
     logToFile(`Alert threshold: ${ALERT_THRESHOLD} wallet(s)`);
+    logToFile('✅ Decoders active for ALL tracked wallets');
+    logToFile('✅ No amount limits on swaps');
+    logToFile('✅ Enhanced universal decoder');
     
     let detection_wallets: string[] = await getWallets()
     logToFile(`📊 Tracking ${detection_wallets.length} wallets`);
