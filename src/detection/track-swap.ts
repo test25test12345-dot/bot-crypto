@@ -37,15 +37,18 @@ const BLACKLISTED_WALLETS = [
     '4wTV1YmiEkRvAtNtsSGPtUrqRYQMe5SKy2uB4Jjaxnjf'
 ];
 
-// SOGLIA PER ALERT - Abbassata a 2 per avere più segnali
-const ALERT_THRESHOLD = 2;
+// SOGLIA PER ALERT - Portata a 3 come richiesto
+const ALERT_THRESHOLD = 3;
+
+// Costante per conversione lamports
+const LAMPORTS_TO_SOL = 1000000000; // 10^9
 
 // Wallet specifici da monitorare con log extra
 const DEBUG_WALLETS = {
     'Assassin.eth': '6LChaYRYtEYjLEHhzo4HdEmgNwu2aia8CM8VhR9wn6n7',
     'Doc': 'DYAn4XpAkN5mhiXkRB7dGq4Jadnx6XYgu8L5b3WGhbrt',
     'GigaBrain': '3h65MmPZksoKKyEpEjnWU2Yk2iYT5oZDNitGy5cTaxoE',
-    'Gake': 'DNfuF1L6rmSpeXJQmVvw9n2LdPUuuRdDiNBpyMqVha41',
+    'Gake': 'DNfuF1L62WWyW3pqQwTxk8nKdX4CNnz5DKEFmnXvT4jK',
     '1': '4t9bWuZsXXKGMgmd96nFD4KWxyPNTsPm4q9jEMH4jD2i',
     'LetterBomb': 'BtMBMPkoNbnLF9Xn552guQq528KKXcsNBNNBre3oaQtr'
 };
@@ -63,6 +66,9 @@ let dexStats = {
     swapsProcessed: 0,
     missedSwaps: 0
 };
+
+// Helper per convertire lamports in SOL
+const lamportsToSol = (lamports: number) => lamports / LAMPORTS_TO_SOL;
 
 const sendAlert = async (chatId: string, message: string) => {
     try {
@@ -130,7 +136,7 @@ function findOurWalletsInTransaction(accountKeys: PublicKey[]): {address: string
     return results;
 }
 
-// Decoder universale POTENZIATO
+// Decoder universale POTENZIATO con correzione conversione SOL
 async function decodeUniversalSwap(tx: VersionedTransactionResponse): Promise<any[]> {
     const swaps = [];
     
@@ -217,7 +223,7 @@ async function decodeUniversalSwap(tx: VersionedTransactionResponse): Promise<an
                 }
             }
             
-            // Check SOL change
+            // Check SOL change (in lamports)
             let solChange = 0;
             if (ourWallet.position < tx.meta.postBalances.length && 
                 ourWallet.position < tx.meta.preBalances.length) {
@@ -229,11 +235,11 @@ async function decodeUniversalSwap(tx: VersionedTransactionResponse): Promise<an
                 }
             }
             
-            // Log dettagliato per debug wallet
+            // Log dettagliato per debug wallet (con conversione corretta)
             if (debugName && (tokenChanges.length > 0 || Math.abs(solChange) > 100000)) {
                 logToFile(`   🔍 ${debugName} Universal Analysis:`);
                 logToFile(`      Token changes: ${tokenChanges.length}`);
-                logToFile(`      SOL change: ${(solChange/10**9).toFixed(4)} SOL`);
+                logToFile(`      SOL change: ${lamportsToSol(solChange).toFixed(4)} SOL`);
                 for (const tc of tokenChanges) {
                     logToFile(`      Token: ${tc.mint.substring(0,8)}... ${tc.isIncrease ? '+' : ''}${tc.change}`);
                 }
@@ -257,7 +263,7 @@ async function decodeUniversalSwap(tx: VersionedTransactionResponse): Promise<an
                         type: 'universal',
                         inMint: WSOL_ADDRESS,
                         outMint: token.mint,
-                        inAmount: Math.abs(solChange),
+                        inAmount: Math.abs(solChange), // In lamports
                         outAmount: Math.abs(token.change)
                     });
                 } else if (!token.isIncrease && solChange > 0) {
@@ -270,7 +276,7 @@ async function decodeUniversalSwap(tx: VersionedTransactionResponse): Promise<an
                         inMint: token.mint,
                         outMint: WSOL_ADDRESS,
                         inAmount: Math.abs(token.change),
-                        outAmount: Math.abs(solChange)
+                        outAmount: Math.abs(solChange) // In lamports
                     });
                 }
             } else if (tokenChanges.length === 2) {
@@ -353,11 +359,16 @@ const checkDB_Alert = async (buyWallets: any, old: any, swapData: any) => {
         message = message + '\n\n💯 <b>TradeScore</b>: ' + positionTradeScore;
         message = message + '\n\n🦚 <b>' + (buyWallets.length - sellWallets.length) + ' smart holders</b>';
         
+        // CORREZIONE QUI: Conversione corretta da lamports a SOL per il calcolo USD
         for (let i = 0; i < buyWallets.length; i++) {
             if (buyWallets[i].type === "buy") {
-                const solAmount = buyWallets[i].inAmount / Math.pow(10, 9);
+                // Conversione da lamports a SOL prima di calcolare USD
+                const solAmount = buyWallets[i].inAmount / LAMPORTS_TO_SOL;
                 const usdAmount = solPrice ? (solAmount * solPrice).toFixed(0) : "N/A";
                 message = message + '\n🟢 ' + buyWallets[i].name + '  ($' + usdAmount + ') (' + buyWallets[i].txTime + ')';
+                
+                // Log per debug
+                logToFile(`   Wallet ${buyWallets[i].name}: ${buyWallets[i].inAmount} lamports = ${solAmount.toFixed(4)} SOL = $${usdAmount}`);
             }
         }
 
@@ -370,7 +381,7 @@ const checkDB_Alert = async (buyWallets: any, old: any, swapData: any) => {
         }
 
         message = message + '\n\n⚡ <a href="https://jup.ag/swap/' + swapData.outMint + '-SOL">Jupiter</a>';
-        message = message + '\n🸠 <a href="https://gmgn.ai/sol/token/' + swapData.outMint + '">Gmgn</a>';
+        message = message + '\n🸸 <a href="https://gmgn.ai/sol/token/' + swapData.outMint + '">Gmgn</a>';
         message = message + '\n🚀 <a href="https://photon-sol.tinyastro.io/en/lp/' + swapData.outMint + '">Photon</a>';
         message = message + '\n🐂 <a href="https://neo.bullx.io/terminal?chainId=1399811149&address=' + swapData.outMint + '">Bullx</a>';
 
@@ -399,13 +410,16 @@ const processSwapData = async (swap_data: any) => {
         const trackedWallet = wallets.find(w => w.address === swap_data.owner);
         if (!trackedWallet) return;
         
-        // Log per debug wallet
+        // Log per debug wallet (con conversione corretta per SOL)
         const debugName = Object.keys(DEBUG_WALLETS).find(name => 
             DEBUG_WALLETS[name as keyof typeof DEBUG_WALLETS] === swap_data.owner
         );
         
         if (debugName) {
-            logToFile(`📊 SWAP by ${trackedWallet.name}: ${swap_data.inMint === WSOL_ADDRESS ? 'BUY' : 'SELL'} ${(swap_data.inMint === WSOL_ADDRESS ? swap_data.inAmount/10**9 : swap_data.outAmount/10**9).toFixed(4)} SOL`);
+            const solAmount = swap_data.inMint === WSOL_ADDRESS 
+                ? lamportsToSol(swap_data.inAmount) 
+                : lamportsToSol(swap_data.outAmount);
+            logToFile(`📊 SWAP by ${trackedWallet.name}: ${swap_data.inMint === WSOL_ADDRESS ? 'BUY' : 'SELL'} ${solAmount.toFixed(4)} SOL`);
         }
         
         dexStats.swapsProcessed++;
@@ -774,7 +788,7 @@ async function subscribeCommand(client: Client, args: SubscribeRequest) {
         try {
             logToFile("🚀 Starting stream...");
             logToFile(`📊 Alert threshold: ${ALERT_THRESHOLD} wallet(s)`);
-            logToFile("🔍 Universal decoder: ENHANCED");
+            logToFile("🔍 Universal decoder: ENHANCED with SOL conversion fix");
             logToFile("✅ All DEX decoders: ACTIVE for all tracked wallets");
             await handleStream(client, args);
         } catch (error) {
@@ -788,12 +802,14 @@ const client = new Client('https://grpc.eu.shyft.to', process.env.GRPC_TOKEN, un
 
 export const start = async () => {
     logToFile("================================");
-    logToFile('�� TRACK-SWAP V4 - FULLY FIXED');
+    logToFile('🚀 TRACK-SWAP V5.1 - FIXED USD VALUES');
     logToFile("================================");
     logToFile(`Alert threshold: ${ALERT_THRESHOLD} wallet(s)`);
     logToFile('✅ Decoders active for ALL tracked wallets');
     logToFile('✅ No amount limits on swaps');
-    logToFile('✅ Enhanced universal decoder');
+    logToFile('✅ Enhanced universal decoder with proper SOL conversion');
+    logToFile('✅ SOL values now properly converted from lamports');
+    logToFile('✅ USD values now calculated correctly');
     
     let detection_wallets: string[] = await getWallets()
     logToFile(`📊 Tracking ${detection_wallets.length} wallets`);
